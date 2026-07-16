@@ -1,15 +1,14 @@
+// lib.rs — owns all Python structure
 use pyo3::prelude::*;
+pub mod data;
 
-/// .
 #[pymodule]
 mod oxide_core {
     use pyo3::prelude::*;
 
-    /// Formats the sum of two numbers as string.
-    #[pyfunction]
-    fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-        Ok((a + b).to_string())
+    #[pymodule]
+    mod data_loader {
+        #[pymodule_export]
+        use crate::data::data_loader::from_csv;
     }
-
-    
 }
