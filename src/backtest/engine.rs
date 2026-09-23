@@ -19,12 +19,17 @@ use crate::strategy::SignalFrame;
 /// Rejects an empty universe or duplicated symbols. Runs before the strategy is called.
 pub fn validate_universe(tickers: &[Ticker]) -> OxideResult<HashSet<String>> {
     if tickers.is_empty() {
-        return Err(OxideError::InvalidInput("data must contain at least one Ticker".into()));
+        return Err(OxideError::InvalidInput(
+            "data must contain at least one Ticker".into(),
+        ));
     }
     let mut symbols = HashSet::with_capacity(tickers.len());
     for ticker in tickers {
         if !symbols.insert(ticker.symbol().to_string()) {
-            return Err(OxideError::InvalidInput(format!("duplicate symbol '{}' in data", ticker.symbol())));
+            return Err(OxideError::InvalidInput(format!(
+                "duplicate symbol '{}' in data",
+                ticker.symbol()
+            )));
         }
     }
     Ok(symbols)
@@ -33,13 +38,21 @@ pub fn validate_universe(tickers: &[Ticker]) -> OxideResult<HashSet<String>> {
 /// Master timeline: sorted union of every ticker's timestamps. Signal row `i`
 /// applies at `timeline[i]`, so `signals.len()` must equal `timeline.len()`.
 pub fn build_timeline(_tickers: &[Ticker]) -> OxideResult<Vec<i64>> {
-    Err(OxideError::NotImplemented("timeline alignment (backtest::engine::build_timeline)"))
+    Err(OxideError::NotImplemented(
+        "timeline alignment (backtest::engine::build_timeline)",
+    ))
 }
 
 /// Runs the full simulation over pre-computed signals.
-pub fn run(tickers: &[Ticker], _signals: &SignalFrame, _config: &BacktestConfig) -> OxideResult<BacktestResult> {
+pub fn run(
+    tickers: &[Ticker],
+    _signals: &SignalFrame,
+    _config: &BacktestConfig,
+) -> OxideResult<BacktestResult> {
     let _timeline = build_timeline(tickers)?;
-    Err(OxideError::NotImplemented("backtest event loop (backtest::engine::run)"))
+    Err(OxideError::NotImplemented(
+        "backtest event loop (backtest::engine::run)",
+    ))
 }
 
 #[cfg(test)]
@@ -59,7 +72,10 @@ mod tests {
 
     #[test]
     fn universe_rejects_empty_input() {
-        assert!(validate_universe(&[]).unwrap_err().to_string().contains("data"));
+        assert!(validate_universe(&[])
+            .unwrap_err()
+            .to_string()
+            .contains("data"));
     }
 
     #[test]

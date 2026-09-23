@@ -51,15 +51,23 @@ mod tests {
 
     #[test]
     fn accepts_rows_with_known_symbols_and_holds() {
-        let rows = vec![SignalRow::new(), SignalRow::from([("AAPL".to_string(), Signal::Flat)])];
+        let rows = vec![
+            SignalRow::new(),
+            SignalRow::from([("AAPL".to_string(), Signal::Flat)]),
+        ];
         let frame = SignalFrame::new(rows, &universe(&["AAPL"])).unwrap();
         assert_eq!(frame.len(), 2);
     }
 
     #[test]
     fn rejects_unknown_symbol_with_row_index() {
-        let rows = vec![SignalRow::new(), SignalRow::from([("TSLA".to_string(), Signal::Flat)])];
-        let err = SignalFrame::new(rows, &universe(&["AAPL"])).unwrap_err().to_string();
+        let rows = vec![
+            SignalRow::new(),
+            SignalRow::from([("TSLA".to_string(), Signal::Flat)]),
+        ];
+        let err = SignalFrame::new(rows, &universe(&["AAPL"]))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("index 1") && err.contains("TSLA"), "{err}");
     }
 }

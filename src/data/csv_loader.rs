@@ -15,11 +15,19 @@ use crate::data::{ColumnSchema, Ticker};
 use crate::error::{OxideError, OxideResult};
 
 /// Loads one symbol's bars from a CSV file.
-pub fn load_csv(_path: &Path, _symbol: Option<&str>, _schema: Option<&ColumnSchema>) -> OxideResult<Ticker> {
-    Err(OxideError::NotImplemented("CSV parsing (data::csv_loader::load_csv)"))
+pub fn load_csv(
+    _path: &Path,
+    _symbol: Option<&str>,
+    _schema: Option<&ColumnSchema>,
+) -> OxideResult<Ticker> {
+    Err(OxideError::NotImplemented(
+        "CSV parsing (data::csv_loader::load_csv)",
+    ))
 }
 
 /// Derives a symbol from a file name: `AAPL.us.txt` -> `AAPL`, `msft.csv` -> `MSFT`.
 pub fn infer_symbol(_path: &Path) -> OxideResult<String> {
-    Err(OxideError::NotImplemented("symbol inference (data::csv_loader::infer_symbol)"))
+    Err(OxideError::NotImplemented(
+        "symbol inference (data::csv_loader::infer_symbol)",
+    ))
 }

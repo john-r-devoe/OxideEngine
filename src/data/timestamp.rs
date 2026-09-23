@@ -8,5 +8,7 @@ use crate::error::{OxideError, OxideResult};
 
 /// Parses a date cell (and optional separate time cell) into epoch milliseconds.
 pub fn parse_timestamp(_date: &str, _time: Option<&str>) -> OxideResult<i64> {
-    Err(OxideError::NotImplemented("timestamp parsing (data::timestamp::parse_timestamp)"))
+    Err(OxideError::NotImplemented(
+        "timestamp parsing (data::timestamp::parse_timestamp)",
+    ))
 }

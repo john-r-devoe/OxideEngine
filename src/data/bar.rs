@@ -16,8 +16,22 @@ pub struct Bar {
 
 impl Bar {
     /// Builds a bar and enforces OHLCV consistency (see [`Bar::validate`]).
-    pub fn new(timestamp: i64, open: f64, high: f64, low: f64, close: f64, volume: f64) -> OxideResult<Self> {
-        let bar = Self { timestamp, open, high, low, close, volume };
+    pub fn new(
+        timestamp: i64,
+        open: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+        volume: f64,
+    ) -> OxideResult<Self> {
+        let bar = Self {
+            timestamp,
+            open,
+            high,
+            low,
+            close,
+            volume,
+        };
         bar.validate()?;
         Ok(bar)
     }
@@ -25,12 +39,22 @@ impl Bar {
     /// Checks the invariants every ingested bar must satisfy:
     /// finite positive prices, `low <= open, close <= high`, finite volume >= 0.
     pub fn validate(&self) -> OxideResult<()> {
-        let prices = [("open", self.open), ("high", self.high), ("low", self.low), ("close", self.close)];
+        let prices = [
+            ("open", self.open),
+            ("high", self.high),
+            ("low", self.low),
+            ("close", self.close),
+        ];
         if let Some((name, value)) = prices.iter().find(|(_, v)| !v.is_finite() || *v <= 0.0) {
-            return Err(OxideError::InvalidBar(format!("{name} must be finite and > 0, got {value}")));
+            return Err(OxideError::InvalidBar(format!(
+                "{name} must be finite and > 0, got {value}"
+            )));
         }
         if !self.volume.is_finite() || self.volume < 0.0 {
-            return Err(OxideError::InvalidBar(format!("volume must be finite and >= 0, got {}", self.volume)));
+            return Err(OxideError::InvalidBar(format!(
+                "volume must be finite and >= 0, got {}",
+                self.volume
+            )));
         }
         if self.high < self.low.max(self.open).max(self.close) {
             return Err(OxideError::InvalidBar(format!(

@@ -24,7 +24,12 @@ use crate::strategy::{SignalFrame, SignalRow};
 // ---------------------------------------------------------------------------
 
 /// Simulation parameters. `commission`/`slippage` are fractions (0.001 = 10 bps).
-#[pyclass(name = "BacktestConfig", module = "oxide_engine", frozen, skip_from_py_object)]
+#[pyclass(
+    name = "BacktestConfig",
+    module = "oxide_engine",
+    frozen,
+    skip_from_py_object
+)]
 #[derive(Debug, Clone)]
 pub struct PyBacktestConfig {
     pub(crate) inner: BacktestConfig,
@@ -41,7 +46,13 @@ impl PyBacktestConfig {
         risk_free_rate: f64,
         periods_per_year: f64,
     ) -> PyResult<Self> {
-        let inner = BacktestConfig::new(starting_cash, commission, slippage, risk_free_rate, periods_per_year)?;
+        let inner = BacktestConfig::new(
+            starting_cash,
+            commission,
+            slippage,
+            risk_free_rate,
+            periods_per_year,
+        )?;
         Ok(Self { inner })
     }
 
@@ -167,7 +178,12 @@ impl PyTrade {
 
     fn __repr__(&self) -> String {
         let t = &self.inner;
-        format!("Trade(symbol={:?}, side={:?}, pnl={:?})", t.symbol, t.side.as_str(), t.pnl)
+        format!(
+            "Trade(symbol={:?}, side={:?}, pnl={:?})",
+            t.symbol,
+            t.side.as_str(),
+            t.pnl
+        )
     }
 }
 
@@ -176,7 +192,12 @@ impl PyTrade {
 // ---------------------------------------------------------------------------
 
 /// Metrics, equity/drawdown curves, and every trade from one backtest.
-#[pyclass(name = "BacktestResult", module = "oxide_engine", frozen, skip_from_py_object)]
+#[pyclass(
+    name = "BacktestResult",
+    module = "oxide_engine",
+    frozen,
+    skip_from_py_object
+)]
 #[derive(Debug, Clone)]
 pub struct PyBacktestResult {
     inner: BacktestResult,
@@ -265,23 +286,38 @@ impl PyBacktestResult {
     /// `[(timestamp_ms, equity), ...]` — one point per timeline step.
     #[getter]
     fn equity_curve(&self) -> Vec<(i64, f64)> {
-        self.inner.equity_curve.iter().map(|p| (p.timestamp, p.equity)).collect()
+        self.inner
+            .equity_curve
+            .iter()
+            .map(|p| (p.timestamp, p.equity))
+            .collect()
     }
 
     /// `[(timestamp_ms, drawdown_fraction), ...]` aligned with `equity_curve`.
     #[getter]
     fn drawdown_curve(&self) -> Vec<(i64, f64)> {
-        self.inner.drawdown_curve.iter().map(|p| (p.timestamp, p.equity)).collect()
+        self.inner
+            .drawdown_curve
+            .iter()
+            .map(|p| (p.timestamp, p.equity))
+            .collect()
     }
 
     #[getter]
     fn trades(&self) -> Vec<PyTrade> {
-        self.inner.trades.iter().cloned().map(|inner| PyTrade { inner }).collect()
+        self.inner
+            .trades
+            .iter()
+            .cloned()
+            .map(|inner| PyTrade { inner })
+            .collect()
     }
 
     #[getter]
     fn config(&self) -> PyBacktestConfig {
-        PyBacktestConfig { inner: self.inner.config }
+        PyBacktestConfig {
+            inner: self.inner.config,
+        }
     }
 
     /// Scalar metrics as a dict (for printing or `pd.Series(result.summary())`).
@@ -356,7 +392,10 @@ fn build_strategy_input<'py>(py: Python<'py>, tickers: &[Ticker]) -> PyResult<Bo
 }
 
 /// Converts `list[dict[str, Signal | None]]` into a [`SignalFrame`] with descriptive errors.
-fn extract_signal_frame(raw: &Bound<'_, PyAny>, universe: &HashSet<String>) -> PyResult<SignalFrame> {
+fn extract_signal_frame(
+    raw: &Bound<'_, PyAny>,
+    universe: &HashSet<String>,
+) -> PyResult<SignalFrame> {
     let list = raw.cast::<PyList>().map_err(|_| {
         PyTypeError::new_err(format!(
             "generate_signals must return a list of dicts, got {}",
@@ -384,7 +423,10 @@ fn extract_signal_row(index: usize, row: &Bound<'_, PyAny>) -> PyResult<SignalRo
     let mut signals = SignalRow::with_capacity(dict.len());
     for (key, value) in dict.iter() {
         let symbol: String = key.extract().map_err(|_| {
-            PyTypeError::new_err(format!("signals at index {index} have a non-str key of type {}", type_name(&key)))
+            PyTypeError::new_err(format!(
+                "signals at index {index} have a non-str key of type {}",
+                type_name(&key)
+            ))
         })?;
         if value.is_none() {
             continue; // None = hold
@@ -401,5 +443,7 @@ fn extract_signal_row(index: usize, row: &Bound<'_, PyAny>) -> PyResult<SignalRo
 }
 
 fn type_name(obj: &Bound<'_, PyAny>) -> String {
-    obj.get_type().name().map_or_else(|_| "<unknown>".to_string(), |n| n.to_string())
+    obj.get_type()
+        .name()
+        .map_or_else(|_| "<unknown>".to_string(), |n| n.to_string())
 }

@@ -11,7 +11,11 @@ pub struct Position {
 
 impl Position {
     pub fn new(symbol: impl Into<String>, quantity: f64, avg_entry_price: f64) -> Self {
-        Self { symbol: symbol.into(), quantity, avg_entry_price }
+        Self {
+            symbol: symbol.into(),
+            quantity,
+            avg_entry_price,
+        }
     }
 
     pub fn is_long(&self) -> bool {

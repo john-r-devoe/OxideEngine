@@ -3,12 +3,17 @@
 Keep in sync with ``src/bindings/``.
 """
 
-from types import ModuleType
 from typing import Any, Literal, Optional
 
 __version__: str
 
-data_loader: ModuleType
+class _DataLoaderModule:
+    """The native ``_core.data_loader`` submodule."""
+
+    @staticmethod
+    def from_csv(path: str, symbol: Optional[str] = None, schema: Optional[dict[str, str]] = None) -> Ticker: ...
+
+data_loader: _DataLoaderModule
 
 SignalKind = Literal["long", "short", "flat", "scale_in", "scale_out"]
 

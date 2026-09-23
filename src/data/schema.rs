@@ -20,7 +20,14 @@ pub enum CanonicalField {
 }
 
 impl CanonicalField {
-    pub const ALL: [Self; 6] = [Self::Timestamp, Self::Open, Self::High, Self::Low, Self::Close, Self::Volume];
+    pub const ALL: [Self; 6] = [
+        Self::Timestamp,
+        Self::Open,
+        Self::High,
+        Self::Low,
+        Self::Close,
+        Self::Volume,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -35,10 +42,15 @@ impl CanonicalField {
 
     /// Parses an exact canonical name (as used in a user schema's values).
     pub fn parse(name: &str) -> OxideResult<Self> {
-        Self::ALL.into_iter().find(|f| f.as_str() == name).ok_or_else(|| {
-            let valid: Vec<&str> = Self::ALL.iter().map(|f| f.as_str()).collect();
-            OxideError::Schema(format!("unknown canonical field '{name}'; expected one of {valid:?}"))
-        })
+        Self::ALL
+            .into_iter()
+            .find(|f| f.as_str() == name)
+            .ok_or_else(|| {
+                let valid: Vec<&str> = Self::ALL.iter().map(|f| f.as_str()).collect();
+                OxideError::Schema(format!(
+                    "unknown canonical field '{name}'; expected one of {valid:?}"
+                ))
+            })
     }
 }
 
@@ -90,7 +102,9 @@ impl ColumnSchema {
 
     /// Locates every canonical field in `headers`, erroring on any missing field.
     pub fn resolve(&self, _headers: &[String]) -> OxideResult<ColumnIndex> {
-        Err(OxideError::NotImplemented("schema header resolution (data::schema::ColumnSchema::resolve)"))
+        Err(OxideError::NotImplemented(
+            "schema header resolution (data::schema::ColumnSchema::resolve)",
+        ))
     }
 }
 
@@ -101,7 +115,9 @@ pub fn normalize_header(_raw: &str) -> String {
 
 /// Resolves column positions from normalized headers when the user gave no schema.
 pub fn auto_detect(_headers: &[String]) -> OxideResult<ColumnIndex> {
-    Err(OxideError::NotImplemented("automatic header detection (data::schema::auto_detect)"))
+    Err(OxideError::NotImplemented(
+        "automatic header detection (data::schema::auto_detect)",
+    ))
 }
 
 #[cfg(test)]
@@ -109,7 +125,10 @@ mod tests {
     use super::*;
 
     fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
-        items.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+        items
+            .iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect()
     }
 
     #[test]
@@ -121,7 +140,8 @@ mod tests {
 
     #[test]
     fn builds_schema_from_valid_mapping() {
-        let schema = ColumnSchema::from_mapping(pairs(&[("Date", "timestamp"), ("Vol", "volume")])).unwrap();
+        let schema =
+            ColumnSchema::from_mapping(pairs(&[("Date", "timestamp"), ("Vol", "volume")])).unwrap();
         assert_eq!(schema.field_for("Date"), Some(CanonicalField::Timestamp));
         assert_eq!(schema.field_for("Vol"), Some(CanonicalField::Volume));
         assert_eq!(schema.field_for("Other"), None);
@@ -135,7 +155,8 @@ mod tests {
 
     #[test]
     fn rejects_two_columns_mapped_to_same_field() {
-        let err = ColumnSchema::from_mapping(pairs(&[("Close", "close"), ("Adj Close", "close")])).unwrap_err();
+        let err = ColumnSchema::from_mapping(pairs(&[("Close", "close"), ("Adj Close", "close")]))
+            .unwrap_err();
         assert!(err.to_string().contains("'close'"));
     }
 }

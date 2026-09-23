@@ -63,5 +63,7 @@ pub fn summarize(
     _risk_free_rate: f64,
     _periods_per_year: f64,
 ) -> OxideResult<PerformanceMetrics> {
-    Err(OxideError::NotImplemented("performance metrics (metrics::summarize)"))
+    Err(OxideError::NotImplemented(
+        "performance metrics (metrics::summarize)",
+    ))
 }

@@ -23,9 +23,14 @@ impl Ticker {
             return Err(OxideError::InvalidTicker("symbol must not be blank".into()));
         }
         if bars.is_empty() {
-            return Err(OxideError::InvalidTicker(format!("bars for '{symbol}' must not be empty")));
+            return Err(OxideError::InvalidTicker(format!(
+                "bars for '{symbol}' must not be empty"
+            )));
         }
-        Ok(Self { symbol, bars: bars.into() })
+        Ok(Self {
+            symbol,
+            bars: bars.into(),
+        })
     }
 
     pub fn symbol(&self) -> &str {

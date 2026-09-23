@@ -19,8 +19,17 @@ pub struct PyBar {
 #[pymethods]
 impl PyBar {
     #[new]
-    fn new(timestamp: i64, open: f64, high: f64, low: f64, close: f64, volume: f64) -> PyResult<Self> {
-        Ok(Self { inner: Bar::new(timestamp, open, high, low, close, volume)? })
+    fn new(
+        timestamp: i64,
+        open: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+        volume: f64,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: Bar::new(timestamp, open, high, low, close, volume)?,
+        })
     }
 
     #[getter]
@@ -63,7 +72,13 @@ impl PyBar {
 }
 
 /// A symbol and its bars. Supports `len()` and (negative) indexing.
-#[pyclass(name = "Ticker", module = "oxide_engine", frozen, sequence, skip_from_py_object)]
+#[pyclass(
+    name = "Ticker",
+    module = "oxide_engine",
+    frozen,
+    sequence,
+    skip_from_py_object
+)]
 #[derive(Debug, Clone)]
 pub struct PyTicker {
     pub(crate) inner: Ticker,
@@ -74,7 +89,9 @@ impl PyTicker {
     #[new]
     fn new(symbol: &str, bars: Vec<PyRef<'_, PyBar>>) -> PyResult<Self> {
         let bars = bars.iter().map(|b| b.inner).collect();
-        Ok(Self { inner: Ticker::new(symbol, bars)? })
+        Ok(Self {
+            inner: Ticker::new(symbol, bars)?,
+        })
     }
 
     #[getter]
@@ -85,7 +102,11 @@ impl PyTicker {
     /// All bars as a new list (copies every bar — prefer indexing for large series).
     #[getter]
     fn bars(&self) -> Vec<PyBar> {
-        self.inner.bars().iter().map(|&inner| PyBar { inner }).collect()
+        self.inner
+            .bars()
+            .iter()
+            .map(|&inner| PyBar { inner })
+            .collect()
     }
 
     fn __len__(&self) -> usize {
@@ -96,13 +117,21 @@ impl PyTicker {
         let len = self.inner.len() as isize;
         let resolved = if index < 0 { index + len } else { index };
         if !(0..len).contains(&resolved) {
-            return Err(PyIndexError::new_err(format!("bar index {index} out of range for {len} bars")));
+            return Err(PyIndexError::new_err(format!(
+                "bar index {index} out of range for {len} bars"
+            )));
         }
-        Ok(PyBar { inner: self.inner.bars()[resolved as usize] })
+        Ok(PyBar {
+            inner: self.inner.bars()[resolved as usize],
+        })
     }
 
     fn __repr__(&self) -> String {
-        format!("Ticker(symbol={:?}, bars={})", self.inner.symbol(), self.inner.len())
+        format!(
+            "Ticker(symbol={:?}, bars={})",
+            self.inner.symbol(),
+            self.inner.len()
+        )
     }
 }
 
@@ -110,7 +139,11 @@ impl PyTicker {
 /// `timestamp|open|high|low|close|volume`; without it headers are auto-normalized.
 #[pyfunction]
 #[pyo3(signature = (path, symbol = None, schema = None))]
-pub fn from_csv(path: &str, symbol: Option<&str>, schema: Option<HashMap<String, String>>) -> PyResult<PyTicker> {
+pub fn from_csv(
+    path: &str,
+    symbol: Option<&str>,
+    schema: Option<HashMap<String, String>>,
+) -> PyResult<PyTicker> {
     let schema = schema.map(ColumnSchema::from_mapping).transpose()?;
     let ticker = load_csv(Path::new(path), symbol, schema.as_ref())?;
     Ok(PyTicker { inner: ticker })

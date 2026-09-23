@@ -18,12 +18,17 @@ pub struct FillSimulator {
 
 impl FillSimulator {
     pub fn from_config(config: &BacktestConfig) -> Self {
-        Self { commission: config.commission, slippage: config.slippage }
+        Self {
+            commission: config.commission,
+            slippage: config.slippage,
+        }
     }
 
     /// Fills `order` against `bar`:
     /// price = `open × (1 ± slippage)`, commission = `|qty| × price × commission`.
     pub fn fill(&self, _order: &Order, _bar: &Bar) -> OxideResult<Fill> {
-        Err(OxideError::NotImplemented("fill simulation (execution::simulator::FillSimulator::fill)"))
+        Err(OxideError::NotImplemented(
+            "fill simulation (execution::simulator::FillSimulator::fill)",
+        ))
     }
 }

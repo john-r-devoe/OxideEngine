@@ -67,7 +67,9 @@ fn validate_weight(weight: f64) -> OxideResult<f64> {
     if weight.is_finite() && (0.0..=1.0).contains(&weight) {
         Ok(weight)
     } else {
-        Err(OxideError::InvalidSignal(format!("weight must be within [0.0, 1.0], got {weight}")))
+        Err(OxideError::InvalidSignal(format!(
+            "weight must be within [0.0, 1.0], got {weight}"
+        )))
     }
 }
 

@@ -26,17 +26,29 @@ impl BacktestConfig {
         periods_per_year: f64,
     ) -> OxideResult<Self> {
         if !starting_cash.is_finite() || starting_cash <= 0.0 {
-            return Err(invalid(format!("starting_cash must be finite and > 0, got {starting_cash}")));
+            return Err(invalid(format!(
+                "starting_cash must be finite and > 0, got {starting_cash}"
+            )));
         }
         check_fraction("commission", commission)?;
         check_fraction("slippage", slippage)?;
         if !risk_free_rate.is_finite() {
-            return Err(invalid(format!("risk_free_rate must be finite, got {risk_free_rate}")));
+            return Err(invalid(format!(
+                "risk_free_rate must be finite, got {risk_free_rate}"
+            )));
         }
         if !periods_per_year.is_finite() || periods_per_year <= 0.0 {
-            return Err(invalid(format!("periods_per_year must be finite and > 0, got {periods_per_year}")));
+            return Err(invalid(format!(
+                "periods_per_year must be finite and > 0, got {periods_per_year}"
+            )));
         }
-        Ok(Self { starting_cash, commission, slippage, risk_free_rate, periods_per_year })
+        Ok(Self {
+            starting_cash,
+            commission,
+            slippage,
+            risk_free_rate,
+            periods_per_year,
+        })
     }
 }
 
@@ -44,7 +56,9 @@ fn check_fraction(name: &str, value: f64) -> OxideResult<()> {
     if value.is_finite() && (0.0..1.0).contains(&value) {
         Ok(())
     } else {
-        Err(invalid(format!("{name} must be a fraction in [0, 1), got {value}")))
+        Err(invalid(format!(
+            "{name} must be a fraction in [0, 1), got {value}"
+        )))
     }
 }
 
@@ -68,14 +82,23 @@ mod tests {
 
     #[test]
     fn rejects_non_positive_cash() {
-        assert!(config(0.0, 0.0, 0.0).unwrap_err().to_string().contains("starting_cash"));
+        assert!(config(0.0, 0.0, 0.0)
+            .unwrap_err()
+            .to_string()
+            .contains("starting_cash"));
         assert!(config(f64::NAN, 0.0, 0.0).is_err());
     }
 
     #[test]
     fn rejects_cost_fractions_outside_unit_interval() {
-        assert!(config(1.0, 1.0, 0.0).unwrap_err().to_string().contains("commission"));
-        assert!(config(1.0, 0.0, -0.1).unwrap_err().to_string().contains("slippage"));
+        assert!(config(1.0, 1.0, 0.0)
+            .unwrap_err()
+            .to_string()
+            .contains("commission"));
+        assert!(config(1.0, 0.0, -0.1)
+            .unwrap_err()
+            .to_string()
+            .contains("slippage"));
     }
 
     #[test]

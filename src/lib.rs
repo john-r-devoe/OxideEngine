@@ -28,11 +28,7 @@ mod _core {
     use super::*;
 
     #[pymodule_export]
-    use crate::bindings::data::PyBar;
-    #[pymodule_export]
-    use crate::bindings::data::PyTicker;
-    #[pymodule_export]
-    use crate::bindings::signal::PySignal;
+    use crate::bindings::backtest::run_backtest;
     #[pymodule_export]
     use crate::bindings::backtest::PyBacktestConfig;
     #[pymodule_export]
@@ -40,7 +36,11 @@ mod _core {
     #[pymodule_export]
     use crate::bindings::backtest::PyTrade;
     #[pymodule_export]
-    use crate::bindings::backtest::run_backtest;
+    use crate::bindings::data::PyBar;
+    #[pymodule_export]
+    use crate::bindings::data::PyTicker;
+    #[pymodule_export]
+    use crate::bindings::signal::PySignal;
 
     /// `oxide_engine.data_loader`
     #[pymodule]

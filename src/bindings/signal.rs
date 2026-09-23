@@ -5,7 +5,13 @@ use pyo3::prelude::*;
 use crate::strategy::Signal;
 
 /// Target exposure as a fraction of equity in [0, 1]. Use `None` to hold.
-#[pyclass(name = "Signal", module = "oxide_engine", frozen, eq, skip_from_py_object)]
+#[pyclass(
+    name = "Signal",
+    module = "oxide_engine",
+    frozen,
+    eq,
+    skip_from_py_object
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PySignal {
     pub(crate) inner: Signal,
@@ -15,27 +21,37 @@ pub struct PySignal {
 impl PySignal {
     #[staticmethod]
     fn long(weight: f64) -> PyResult<Self> {
-        Ok(Self { inner: Signal::long(weight)? })
+        Ok(Self {
+            inner: Signal::long(weight)?,
+        })
     }
 
     #[staticmethod]
     fn short(weight: f64) -> PyResult<Self> {
-        Ok(Self { inner: Signal::short(weight)? })
+        Ok(Self {
+            inner: Signal::short(weight)?,
+        })
     }
 
     #[staticmethod]
     fn flat() -> Self {
-        Self { inner: Signal::flat() }
+        Self {
+            inner: Signal::flat(),
+        }
     }
 
     #[staticmethod]
     fn scale_in(weight: f64) -> PyResult<Self> {
-        Ok(Self { inner: Signal::scale_in(weight)? })
+        Ok(Self {
+            inner: Signal::scale_in(weight)?,
+        })
     }
 
     #[staticmethod]
     fn scale_out(weight: f64) -> PyResult<Self> {
-        Ok(Self { inner: Signal::scale_out(weight)? })
+        Ok(Self {
+            inner: Signal::scale_out(weight)?,
+        })
     }
 
     /// One of "long", "short", "flat", "scale_in", "scale_out".

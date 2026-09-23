@@ -45,7 +45,14 @@ impl From<OxideError> for PyErr {
         match err {
             OxideError::Io { .. } => PyIOError::new_err(err.to_string()),
             OxideError::NotImplemented(_) => PyNotImplementedError::new_err(err.to_string()),
-            _ => PyValueError::new_err(err.to_string()),
+            // Listed explicitly so a new variant forces a conscious mapping choice.
+            OxideError::Schema(_)
+            | OxideError::MalformedRow { .. }
+            | OxideError::InvalidBar(_)
+            | OxideError::InvalidTicker(_)
+            | OxideError::InvalidSignal(_)
+            | OxideError::InvalidConfig(_)
+            | OxideError::InvalidInput(_) => PyValueError::new_err(err.to_string()),
         }
     }
 }
