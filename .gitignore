@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# Rust
+# ---------------------------------------------------------------------------
+# Build output at any depth (repo root, or an IDE/rust-analyzer target elsewhere)
+target/
+**/*.rs.bk
+# cargo-llvm-cov / instrumented builds
+*.profraw
+*.profdata
+lcov.info
+# NOTE: Cargo.lock is intentionally tracked (this crate ships a binary extension)
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+# Packaging output — anchored to the root so source dirs named build/dist are kept
+/build/
+/dist/
+
+# Compiled extension artifacts (`maturin develop` drops these into python/oxide_engine/)
+*.pyd
+*.so
+*.dylib
+*.pdb
+
+# ---------------------------------------------------------------------------
+# Data & secrets
+# ---------------------------------------------------------------------------
+# Local market data (keep committed test fixtures under tests/fixtures/)
+/data/
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# Claude Code (local, per-user) — CLAUDE.md itself IS tracked
+# ---------------------------------------------------------------------------
+.claude/
+CLAUDE.local.md
+.mcp.json
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
