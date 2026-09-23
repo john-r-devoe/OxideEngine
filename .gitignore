@@ -28,4 +28,7 @@ python/oxide_engine/*.so
 Thumbs.db
 
 # Claude Code local settings
-.claude/settings.local.json
+.claude/*
+
+# Debug symbols emitted next to the extension on Windows
+python/oxide_engine/*.pdb
