@@ -1,0 +1,31 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+dist/
+build/
+
+# Compiled extension placed into the source tree by `maturin develop`
+python/oxide_engine/*.pyd
+python/oxide_engine/*.so
+
+# Local market data (keep test fixtures under tests/fixtures/)
+/data/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

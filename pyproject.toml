@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "oxide_engine"
+description = "Vectorized-signal backtesting engine: Python strategies, Rust execution."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["maturin>=1.9,<2.0", "pytest>=8", "pytest-cov>=5", "pandas>=2"]
+
+[tool.maturin]
+# Mixed Rust/Python layout: Python sources live in python/oxide_engine and the
+# compiled extension is installed as oxide_engine._core.
+python-source = "python"
+module-name = "oxide_engine._core"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+xfail_strict = true
