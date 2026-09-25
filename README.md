@@ -94,8 +94,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt
 ```
 
-Re-run `maturin develop` after every Rust change. See [CLAUDE.md](CLAUDE.md) for
-the architecture, the rules, and the TDD workflow.
+Re-run `maturin develop` after every Rust change.
 
 ## Project layout
 

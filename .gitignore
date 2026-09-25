@@ -44,10 +44,13 @@ coverage.xml
 .env.*
 
 # ---------------------------------------------------------------------------
-# Claude Code (local, per-user) — CLAUDE.md itself IS tracked
+# Claude Code & TDD evidence (kept locally, never pushed)
 # ---------------------------------------------------------------------------
 .claude/
+CLAUDE.md
 CLAUDE.local.md
+docs/tdd/
+*.tdd.md
 .mcp.json
 
 # ---------------------------------------------------------------------------
