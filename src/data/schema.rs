@@ -58,8 +58,6 @@ impl CanonicalField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnIndex {
     pub timestamp: usize,
-    /// Optional separate time-of-day column (e.g. Stooq's `<TIME>`), merged into `timestamp`.
-    pub time: Option<usize>,
     pub open: usize,
     pub high: usize,
     pub low: usize,
@@ -101,23 +99,84 @@ impl ColumnSchema {
     }
 
     /// Locates every canonical field in `headers`, erroring on any missing field.
-    pub fn resolve(&self, _headers: &[String]) -> OxideResult<ColumnIndex> {
-        Err(OxideError::NotImplemented(
-            "schema header resolution (data::schema::ColumnSchema::resolve)",
-        ))
+    pub fn resolve(&self, headers: &[String]) -> OxideResult<ColumnIndex> {
+        let hint = "the schema must map a header column to every canonical field";
+        locate(headers, hint, |header, field| {
+            self.field_for(header.trim()) == Some(field)
+        })
+    }
+}
+
+/// Header names (after [`normalize_header`]) recognized for each field without a schema.
+fn aliases(field: CanonicalField) -> &'static [&'static str] {
+    match field {
+        CanonicalField::Timestamp => &["timestamp", "date", "datetime"],
+        CanonicalField::Open => &["open"],
+        CanonicalField::High => &["high"],
+        CanonicalField::Low => &["low"],
+        CanonicalField::Close => &["close"],
+        CanonicalField::Volume => &["volume", "vol"],
     }
 }
 
 /// Normalizes a raw header for schema-less matching: strips `<`/`>`, trims, lowercases.
-pub fn normalize_header(_raw: &str) -> String {
-    todo!("header normalization (data::schema::normalize_header)")
+pub fn normalize_header(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches('<')
+        .trim_end_matches('>')
+        .trim()
+        .to_lowercase()
 }
 
 /// Resolves column positions from normalized headers when the user gave no schema.
-pub fn auto_detect(_headers: &[String]) -> OxideResult<ColumnIndex> {
-    Err(OxideError::NotImplemented(
-        "automatic header detection (data::schema::auto_detect)",
-    ))
+pub fn auto_detect(headers: &[String]) -> OxideResult<ColumnIndex> {
+    let normalized: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
+    let hint = "pass a schema mapping your columns to canonical fields";
+    locate(&normalized, hint, |header, field| {
+        aliases(field).contains(&header)
+    })
+}
+
+/// Finds the single header matching each canonical field. Errors (with `hint`
+/// appended) if any field matches no column or more than one.
+fn locate(
+    headers: &[String],
+    hint: &str,
+    matches: impl Fn(&str, CanonicalField) -> bool,
+) -> OxideResult<ColumnIndex> {
+    let found = CanonicalField::ALL.map(|field| {
+        let hits: Vec<usize> = (0..headers.len())
+            .filter(|&i| matches(&headers[i], field))
+            .collect();
+        (field, hits)
+    });
+    if let Some((field, hits)) = found.iter().find(|(_, hits)| hits.len() > 1) {
+        let columns: Vec<&str> = hits.iter().map(|&i| headers[i].as_str()).collect();
+        return Err(OxideError::Schema(format!(
+            "columns {columns:?} all match '{}'; {hint}",
+            field.as_str()
+        )));
+    }
+    let missing: Vec<&str> = found
+        .iter()
+        .filter(|(_, hits)| hits.is_empty())
+        .map(|(field, _)| field.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(OxideError::Schema(format!(
+            "no column in {headers:?} matches {missing:?}; {hint}"
+        )));
+    }
+    // Every field now has exactly one hit.
+    let [timestamp, open, high, low, close, volume] = found.map(|(_, hits)| hits[0]);
+    Ok(ColumnIndex {
+        timestamp,
+        open,
+        high,
+        low,
+        close,
+        volume,
+    })
 }
 
 #[cfg(test)]
@@ -158,5 +217,130 @@ mod tests {
         let err = ColumnSchema::from_mapping(pairs(&[("Close", "close"), ("Adj Close", "close")]))
             .unwrap_err();
         assert!(err.to_string().contains("'close'"));
+    }
+
+    fn headers(items: &[&str]) -> Vec<String> {
+        items.iter().map(|h| h.to_string()).collect()
+    }
+
+    fn custom_schema() -> ColumnSchema {
+        ColumnSchema::from_mapping(pairs(&[
+            ("Date", "timestamp"),
+            ("Open", "open"),
+            ("High", "high"),
+            ("Low", "low"),
+            ("Close", "close"),
+            ("Vol", "volume"),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn normalizes_brackets_whitespace_and_case() {
+        assert_eq!(normalize_header("<CLOSE>"), "close");
+        assert_eq!(normalize_header("  Vol "), "vol");
+        assert_eq!(normalize_header("< Date >"), "date");
+    }
+
+    #[test]
+    fn auto_detects_stooq_headers_ignoring_time_column() {
+        let index = auto_detect(&headers(&[
+            "<TICKER>",
+            "<PER>",
+            "<DATE>",
+            "<TIME>",
+            "<OPEN>",
+            "<HIGH>",
+            "<LOW>",
+            "<CLOSE>",
+            "<VOL>",
+            "<OPENINT>",
+        ]))
+        .unwrap();
+        let expected = ColumnIndex {
+            timestamp: 2,
+            open: 4,
+            high: 5,
+            low: 6,
+            close: 7,
+            volume: 8,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn auto_detects_plain_headers_in_any_order() {
+        let index = auto_detect(&headers(&[
+            "Volume",
+            "Close",
+            "Low",
+            "High",
+            "Open",
+            "Timestamp",
+        ]))
+        .unwrap();
+        let expected = ColumnIndex {
+            timestamp: 5,
+            open: 4,
+            high: 3,
+            low: 2,
+            close: 1,
+            volume: 0,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn auto_detect_names_every_missing_field() {
+        let err = auto_detect(&headers(&["Date", "Open", "Price"])).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, OxideError::Schema(_)));
+        for missing in ["high", "low", "close", "volume"] {
+            assert!(message.contains(missing), "{message}");
+        }
+    }
+
+    #[test]
+    fn resolves_user_schema_against_header() {
+        let index = custom_schema()
+            .resolve(&headers(&["Vol", "Date", "Open", "High", "Low", "Close"]))
+            .unwrap();
+        let expected = ColumnIndex {
+            timestamp: 1,
+            open: 2,
+            high: 3,
+            low: 4,
+            close: 5,
+            volume: 0,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn resolve_errors_when_mapped_column_is_absent_from_header() {
+        let err = custom_schema()
+            .resolve(&headers(&["Date", "Open", "High", "Low", "Vol"]))
+            .unwrap_err();
+        assert!(matches!(err, OxideError::Schema(_)));
+        assert!(err.to_string().contains("close"));
+    }
+
+    #[test]
+    fn resolve_errors_when_schema_does_not_cover_every_field() {
+        let schema = ColumnSchema::from_mapping(pairs(&[("Date", "timestamp")])).unwrap();
+        let err = schema
+            .resolve(&headers(&["Date", "Open", "High", "Low", "Close", "Vol"]))
+            .unwrap_err();
+        assert!(err.to_string().contains("open"));
+    }
+
+    #[test]
+    fn auto_detect_rejects_two_columns_matching_one_field() {
+        let err = auto_detect(&headers(&[
+            "Date", "Open", "High", "Low", "Close", "Vol", "Volume",
+        ]))
+        .unwrap_err();
+        assert!(matches!(err, OxideError::Schema(_)));
+        assert!(err.to_string().contains("volume"), "{err}");
     }
 }
