@@ -1,6 +1,6 @@
 """The README usage example, verbatim, as an executable spec.
 
-Strict-xfail until the CSV parser and the engine loop are implemented.
+Strict-xfail until the engine loop is implemented.
 """
 
 from pathlib import Path
@@ -29,7 +29,7 @@ class MACrossover:
         return signals
 
 
-@pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="CSV parser and engine loop are stubbed")
+@pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="engine loop is stubbed")
 def test_readme_usage_example(stooq_csv: Path, custom_csv: Path):
     aapl = oxide.data_loader.from_csv(str(stooq_csv))
     msft = oxide.data_loader.from_csv(str(custom_csv), symbol="MSFT", schema=CUSTOM_SCHEMA)

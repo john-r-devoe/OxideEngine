@@ -101,23 +101,83 @@ impl ColumnSchema {
     }
 
     /// Locates every canonical field in `headers`, erroring on any missing field.
-    pub fn resolve(&self, _headers: &[String]) -> OxideResult<ColumnIndex> {
-        Err(OxideError::NotImplemented(
-            "schema header resolution (data::schema::ColumnSchema::resolve)",
-        ))
+    pub fn resolve(&self, headers: &[String]) -> OxideResult<ColumnIndex> {
+        locate(headers, None, |header, field| {
+            self.field_for(header.trim()) == Some(field)
+        })
+        .map_err(|missing| {
+            OxideError::Schema(format!(
+                "no column in {headers:?} is mapped to {missing:?}; \
+                 the schema must map a header column to every one of these fields"
+            ))
+        })
+    }
+}
+
+/// Header names (after [`normalize_header`]) recognized for each field without a schema.
+fn aliases(field: CanonicalField) -> &'static [&'static str] {
+    match field {
+        CanonicalField::Timestamp => &["timestamp", "date", "datetime"],
+        CanonicalField::Open => &["open"],
+        CanonicalField::High => &["high"],
+        CanonicalField::Low => &["low"],
+        CanonicalField::Close => &["close"],
+        CanonicalField::Volume => &["volume", "vol"],
     }
 }
 
 /// Normalizes a raw header for schema-less matching: strips `<`/`>`, trims, lowercases.
-pub fn normalize_header(_raw: &str) -> String {
-    todo!("header normalization (data::schema::normalize_header)")
+pub fn normalize_header(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches('<')
+        .trim_end_matches('>')
+        .trim()
+        .to_lowercase()
 }
 
 /// Resolves column positions from normalized headers when the user gave no schema.
-pub fn auto_detect(_headers: &[String]) -> OxideResult<ColumnIndex> {
-    Err(OxideError::NotImplemented(
-        "automatic header detection (data::schema::auto_detect)",
-    ))
+/// A separate `time` column (Stooq's `<TIME>`) is picked up when present.
+pub fn auto_detect(headers: &[String]) -> OxideResult<ColumnIndex> {
+    let normalized: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
+    let time = normalized.iter().position(|h| h == "time");
+    locate(&normalized, time, |header, field| {
+        aliases(field).contains(&header)
+    })
+    .map_err(|missing| {
+        OxideError::Schema(format!(
+            "could not detect {missing:?} among headers {headers:?}; \
+             pass a schema mapping your columns to canonical fields"
+        ))
+    })
+}
+
+/// Finds the first header matching each canonical field, or returns the names of
+/// every field with no match.
+fn locate(
+    headers: &[String],
+    time: Option<usize>,
+    matches: impl Fn(&str, CanonicalField) -> bool,
+) -> Result<ColumnIndex, Vec<&'static str>> {
+    let positions = CanonicalField::ALL.map(|field| headers.iter().position(|h| matches(h, field)));
+    match positions {
+        [Some(timestamp), Some(open), Some(high), Some(low), Some(close), Some(volume)] => {
+            Ok(ColumnIndex {
+                timestamp,
+                time,
+                open,
+                high,
+                low,
+                close,
+                volume,
+            })
+        }
+        _ => Err(CanonicalField::ALL
+            .into_iter()
+            .zip(positions)
+            .filter(|(_, position)| position.is_none())
+            .map(|(field, _)| field.as_str())
+            .collect()),
+    }
 }
 
 #[cfg(test)]
@@ -186,8 +246,16 @@ mod tests {
     #[test]
     fn auto_detects_stooq_headers_with_time_column() {
         let index = auto_detect(&headers(&[
-            "<TICKER>", "<PER>", "<DATE>", "<TIME>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>",
-            "<VOL>", "<OPENINT>",
+            "<TICKER>",
+            "<PER>",
+            "<DATE>",
+            "<TIME>",
+            "<OPEN>",
+            "<HIGH>",
+            "<LOW>",
+            "<CLOSE>",
+            "<VOL>",
+            "<OPENINT>",
         ]))
         .unwrap();
         let expected = ColumnIndex {
@@ -204,8 +272,15 @@ mod tests {
 
     #[test]
     fn auto_detects_plain_headers_in_any_order() {
-        let index =
-            auto_detect(&headers(&["Volume", "Close", "Low", "High", "Open", "Timestamp"])).unwrap();
+        let index = auto_detect(&headers(&[
+            "Volume",
+            "Close",
+            "Low",
+            "High",
+            "Open",
+            "Timestamp",
+        ]))
+        .unwrap();
         let expected = ColumnIndex {
             timestamp: 5,
             time: None,

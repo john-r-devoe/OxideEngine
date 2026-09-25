@@ -1,35 +1,114 @@
 //! CSV file -> [`Ticker`](crate::data::Ticker).
 //!
-//! Pipeline to implement:
-//! 1. open `path` with the `csv` crate, mapping I/O failures to [`OxideError::Io`];
-//! 2. resolve columns from the header row via `schema` or `schema::auto_detect`;
-//! 3. per row: `timestamp::parse_timestamp` + parse OHLCV, then `Bar::new` (OHLC
-//!    validation); map any failure to [`OxideError::MalformedRow`] with the 1-based
-//!    data-row number;
-//! 4. sort by timestamp and reject duplicate timestamps;
-//! 5. symbol = explicit `symbol`, else [`infer_symbol`] from the file name.
+//! 1. read the header row and resolve columns via the user's `schema`, or
+//!    [`schema::auto_detect`] when none is given (either errors if a field is missing);
+//! 2. parse each row into a validated [`Bar`], reporting failures as
+//!    [`OxideError::MalformedRow`] with the 1-based data-row number;
+//! 3. sort by timestamp and reject duplicates;
+//! 4. symbol = explicit `symbol`, else [`infer_symbol`] from the file name.
 
 use std::path::Path;
 
-use crate::data::{ColumnSchema, Ticker};
+use csv::StringRecord;
+
+use crate::data::schema::{self, ColumnIndex};
+use crate::data::timestamp::parse_timestamp;
+use crate::data::{Bar, ColumnSchema, Ticker};
 use crate::error::{OxideError, OxideResult};
 
 /// Loads one symbol's bars from a CSV file.
 pub fn load_csv(
-    _path: &Path,
-    _symbol: Option<&str>,
-    _schema: Option<&ColumnSchema>,
+    path: &Path,
+    symbol: Option<&str>,
+    schema: Option<&ColumnSchema>,
 ) -> OxideResult<Ticker> {
-    Err(OxideError::NotImplemented(
-        "CSV parsing (data::csv_loader::load_csv)",
-    ))
+    let io_error = |e: csv::Error| OxideError::Io {
+        path: path.display().to_string(),
+        message: e.to_string(),
+    };
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_path(path)
+        .map_err(io_error)?;
+    let headers: Vec<String> = reader
+        .headers()
+        .map_err(io_error)?
+        .iter()
+        .map(str::to_string)
+        .collect();
+    let columns = match schema {
+        Some(schema) => schema.resolve(&headers)?,
+        None => schema::auto_detect(&headers)?,
+    };
+
+    let mut bars = reader
+        .records()
+        .enumerate()
+        .map(|(i, record)| {
+            record
+                .map_err(|e| e.to_string())
+                .and_then(|record| parse_bar(&record, &columns))
+                .map_err(|message| OxideError::MalformedRow {
+                    row: i + 1,
+                    message,
+                })
+        })
+        .collect::<OxideResult<Vec<Bar>>>()?;
+    bars.sort_by_key(|bar| bar.timestamp);
+    if let Some(pair) = bars
+        .windows(2)
+        .find(|pair| pair[0].timestamp == pair[1].timestamp)
+    {
+        return Err(OxideError::InvalidTicker(format!(
+            "duplicate timestamp {} in '{}'",
+            pair[0].timestamp,
+            path.display()
+        )));
+    }
+
+    let symbol = match symbol {
+        Some(symbol) => symbol.to_string(),
+        None => infer_symbol(path)?,
+    };
+    Ticker::new(symbol, bars)
+}
+
+/// Builds one validated bar from a data row.
+fn parse_bar(record: &StringRecord, columns: &ColumnIndex) -> Result<Bar, String> {
+    // The reader rejects rows whose width differs from the header, so every index exists.
+    let cell = |i: usize| record.get(i).unwrap_or_default();
+    let number = |i: usize, name: &str| {
+        cell(i)
+            .parse::<f64>()
+            .map_err(|_| format!("{name} '{}' is not a number", cell(i)))
+    };
+    let timestamp = parse_timestamp(cell(columns.timestamp), columns.time.map(cell))
+        .map_err(|e| e.to_string())?;
+    Bar::new(
+        timestamp,
+        number(columns.open, "open")?,
+        number(columns.high, "high")?,
+        number(columns.low, "low")?,
+        number(columns.close, "close")?,
+        number(columns.volume, "volume")?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Derives a symbol from a file name: `AAPL.us.txt` -> `AAPL`, `msft.csv` -> `MSFT`.
-pub fn infer_symbol(_path: &Path) -> OxideResult<String> {
-    Err(OxideError::NotImplemented(
-        "symbol inference (data::csv_loader::infer_symbol)",
-    ))
+pub fn infer_symbol(path: &Path) -> OxideResult<String> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split('.').next())
+        .map(str::trim)
+        .filter(|stem| !stem.is_empty())
+        .map(str::to_uppercase)
+        .ok_or_else(|| {
+            OxideError::InvalidTicker(format!(
+                "cannot infer a symbol from '{}'; pass `symbol` explicitly",
+                path.display()
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -147,7 +226,10 @@ mod tests {
              2024-01-03,abc,1,1,1,0\n",
         );
         let err = load_csv(&path, None, None).unwrap_err();
-        assert!(matches!(err, OxideError::MalformedRow { row: 2, .. }), "{err}");
+        assert!(
+            matches!(err, OxideError::MalformedRow { row: 2, .. }),
+            "{err}"
+        );
         assert!(err.to_string().contains("abc"), "{err}");
     }
 
@@ -159,7 +241,10 @@ mod tests {
             "date,open,high,low,close,volume\n2024-01-02,10,9,11,10,0\n",
         );
         let err = load_csv(&path, None, None).unwrap_err();
-        assert!(matches!(err, OxideError::MalformedRow { row: 1, .. }), "{err}");
+        assert!(
+            matches!(err, OxideError::MalformedRow { row: 1, .. }),
+            "{err}"
+        );
         assert!(err.to_string().contains("high"), "{err}");
     }
 
