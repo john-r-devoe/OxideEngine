@@ -49,7 +49,8 @@ fn parse_datetime(s: &str) -> Option<i64> {
     };
     let mut parts = date.split('-');
     let (y, m, d) = (parts.next()?, parts.next()?, parts.next()?);
-    if parts.next().is_some() {
+    // A 4-digit year also keeps the day arithmetic far from i64 overflow.
+    if parts.next().is_some() || y.len() != 4 {
         return None;
     }
     let date_ms = days_from_ymd(digits(y)?, digits(m)?, digits(d)?)? * MS_PER_DAY;

@@ -102,14 +102,9 @@ impl ColumnSchema {
 
     /// Locates every canonical field in `headers`, erroring on any missing field.
     pub fn resolve(&self, headers: &[String]) -> OxideResult<ColumnIndex> {
-        locate(headers, None, |header, field| {
+        let hint = "the schema must map a header column to every canonical field";
+        locate(headers, None, hint, |header, field| {
             self.field_for(header.trim()) == Some(field)
-        })
-        .map_err(|missing| {
-            OxideError::Schema(format!(
-                "no column in {headers:?} is mapped to {missing:?}; \
-                 the schema must map a header column to every one of these fields"
-            ))
         })
     }
 }
@@ -140,44 +135,54 @@ pub fn normalize_header(raw: &str) -> String {
 pub fn auto_detect(headers: &[String]) -> OxideResult<ColumnIndex> {
     let normalized: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
     let time = normalized.iter().position(|h| h == "time");
-    locate(&normalized, time, |header, field| {
+    let hint = "pass a schema mapping your columns to canonical fields";
+    locate(&normalized, time, hint, |header, field| {
         aliases(field).contains(&header)
-    })
-    .map_err(|missing| {
-        OxideError::Schema(format!(
-            "could not detect {missing:?} among headers {headers:?}; \
-             pass a schema mapping your columns to canonical fields"
-        ))
     })
 }
 
-/// Finds the first header matching each canonical field, or returns the names of
-/// every field with no match.
+/// Finds the single header matching each canonical field. Errors (with `hint`
+/// appended) if any field matches no column or more than one.
 fn locate(
     headers: &[String],
     time: Option<usize>,
+    hint: &str,
     matches: impl Fn(&str, CanonicalField) -> bool,
-) -> Result<ColumnIndex, Vec<&'static str>> {
-    let positions = CanonicalField::ALL.map(|field| headers.iter().position(|h| matches(h, field)));
-    match positions {
-        [Some(timestamp), Some(open), Some(high), Some(low), Some(close), Some(volume)] => {
-            Ok(ColumnIndex {
-                timestamp,
-                time,
-                open,
-                high,
-                low,
-                close,
-                volume,
-            })
-        }
-        _ => Err(CanonicalField::ALL
-            .into_iter()
-            .zip(positions)
-            .filter(|(_, position)| position.is_none())
-            .map(|(field, _)| field.as_str())
-            .collect()),
+) -> OxideResult<ColumnIndex> {
+    let found = CanonicalField::ALL.map(|field| {
+        let hits: Vec<usize> = (0..headers.len())
+            .filter(|&i| matches(&headers[i], field))
+            .collect();
+        (field, hits)
+    });
+    if let Some((field, hits)) = found.iter().find(|(_, hits)| hits.len() > 1) {
+        let columns: Vec<&str> = hits.iter().map(|&i| headers[i].as_str()).collect();
+        return Err(OxideError::Schema(format!(
+            "columns {columns:?} all match '{}'; {hint}",
+            field.as_str()
+        )));
     }
+    let missing: Vec<&str> = found
+        .iter()
+        .filter(|(_, hits)| hits.is_empty())
+        .map(|(field, _)| field.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(OxideError::Schema(format!(
+            "no column in {headers:?} matches {missing:?}; {hint}"
+        )));
+    }
+    // Every field now has exactly one hit.
+    let [timestamp, open, high, low, close, volume] = found.map(|(_, hits)| hits[0]);
+    Ok(ColumnIndex {
+        timestamp,
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume,
+    })
 }
 
 #[cfg(test)]
@@ -340,8 +345,10 @@ mod tests {
 
     #[test]
     fn auto_detect_rejects_two_columns_matching_one_field() {
-        let err = auto_detect(&headers(&["Date", "Open", "High", "Low", "Close", "Vol", "Volume"]))
-            .unwrap_err();
+        let err = auto_detect(&headers(&[
+            "Date", "Open", "High", "Low", "Close", "Vol", "Volume",
+        ]))
+        .unwrap_err();
         assert!(matches!(err, OxideError::Schema(_)));
         assert!(err.to_string().contains("volume"), "{err}");
     }
