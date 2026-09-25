@@ -82,8 +82,7 @@ fn parse_bar(record: &StringRecord, columns: &ColumnIndex) -> Result<Bar, String
             .parse::<f64>()
             .map_err(|_| format!("{name} '{}' is not a number", cell(i)))
     };
-    let timestamp = parse_timestamp(cell(columns.timestamp), columns.time.map(cell))
-        .map_err(|e| e.to_string())?;
+    let timestamp = parse_timestamp(cell(columns.timestamp)).map_err(|e| e.to_string())?;
     Bar::new(
         timestamp,
         number(columns.open, "open")?,

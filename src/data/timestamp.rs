@@ -1,8 +1,9 @@
-//! Parsing of date/time cells into Unix epoch milliseconds (UTC).
+//! Parsing of a timestamp cell into Unix epoch milliseconds.
 //!
-//! Formats to support: `YYYYMMDD` (+ optional `HHMMSS` time column, Stooq),
-//! `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`, ISO-8601 with `T`, and integer epoch
-//! seconds/milliseconds.
+//! Supported: `YYYYMMDD`, `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS` (or `T` separator),
+//! and integer epoch seconds/milliseconds. Timestamps are naive: they are read as
+//! UTC and any timezone designator (`Z`, `+02:00`) is rejected, so every file must
+//! already use one consistent clock.
 
 use crate::error::{OxideError, OxideResult};
 
@@ -12,24 +13,16 @@ const MS_PER_DAY: i64 = 86_400_000;
 /// (1e11 s is the year 5138; 1e11 ms is March 1973).
 const EPOCH_MS_THRESHOLD: i64 = 100_000_000_000;
 
-/// Parses a date cell (and optional separate time cell) into epoch milliseconds.
+/// Parses a timestamp cell into epoch milliseconds.
 ///
 /// An all-digit cell of exactly 8 characters is always read as `YYYYMMDD`, never
 /// as epoch seconds.
-pub fn parse_timestamp(date: &str, time: Option<&str>) -> OxideResult<i64> {
-    let parsed = match time {
-        Some(time) => parse_datetime(date.trim()).zip(parse_time(time.trim())),
-        None => parse_datetime(date.trim()).map(|ms| (ms, 0)),
-    };
-    parsed
-        .map(|(date_ms, time_ms)| date_ms + time_ms)
-        .ok_or_else(|| {
-            let shown = time.map_or(date.to_string(), |t| format!("{date} {t}"));
-            OxideError::InvalidBar(format!("unrecognized timestamp '{shown}'"))
-        })
+pub fn parse_timestamp(cell: &str) -> OxideResult<i64> {
+    parse_datetime(cell.trim())
+        .ok_or_else(|| OxideError::InvalidBar(format!("unrecognized timestamp '{cell}'")))
 }
 
-/// Epoch ms from `YYYYMMDD`, integer epoch s/ms, or `YYYY-MM-DD[( |T)HH:MM:SS[Z]]`.
+/// Epoch ms from `YYYYMMDD`, integer epoch s/ms, or `YYYY-MM-DD[( |T)HH:MM:SS]`.
 fn parse_datetime(s: &str) -> Option<i64> {
     if s.len() == 8 {
         if let Some(ymd) = digits(s) {
@@ -58,18 +51,14 @@ fn parse_datetime(s: &str) -> Option<i64> {
     Some(date_ms + time_ms)
 }
 
-/// Milliseconds since midnight from `HHMMSS` or `HH:MM:SS` (optional trailing `Z`).
+/// Milliseconds since midnight from exactly `HH:MM:SS`.
 fn parse_time(s: &str) -> Option<i64> {
-    let hhmmss: String = s
-        .trim_end_matches('Z')
-        .chars()
-        .filter(|&c| c != ':')
-        .collect();
-    if hhmmss.len() != 6 {
+    let mut parts = s.split(':');
+    let (h, m, sec) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() || [h, m, sec].iter().any(|p| p.len() != 2) {
         return None;
     }
-    let value = digits(&hhmmss)?;
-    let (h, m, sec) = (value / 10_000, value / 100 % 100, value % 100);
+    let (h, m, sec) = (digits(h)?, digits(m)?, digits(sec)?);
     (h < 24 && m < 60 && sec < 60).then_some((h * 3600 + m * 60 + sec) * MS_PER_SECOND)
 }
 
@@ -152,7 +141,11 @@ mod tests {
 
     #[test]
     fn rejects_timezone_designators() {
-        for cell in ["2024-01-02T09:30:00Z", "2024-01-02T09:30:00+02:00", "2024-01-02 09:30:00-05:00"] {
+        for cell in [
+            "2024-01-02T09:30:00Z",
+            "2024-01-02T09:30:00+02:00",
+            "2024-01-02 09:30:00-05:00",
+        ] {
             assert!(parse_timestamp(cell).is_err(), "{cell}");
         }
     }

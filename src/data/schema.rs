@@ -58,8 +58,6 @@ impl CanonicalField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnIndex {
     pub timestamp: usize,
-    /// Optional separate time-of-day column (e.g. Stooq's `<TIME>`), merged into `timestamp`.
-    pub time: Option<usize>,
     pub open: usize,
     pub high: usize,
     pub low: usize,
@@ -103,7 +101,7 @@ impl ColumnSchema {
     /// Locates every canonical field in `headers`, erroring on any missing field.
     pub fn resolve(&self, headers: &[String]) -> OxideResult<ColumnIndex> {
         let hint = "the schema must map a header column to every canonical field";
-        locate(headers, None, hint, |header, field| {
+        locate(headers, hint, |header, field| {
             self.field_for(header.trim()) == Some(field)
         })
     }
@@ -131,12 +129,10 @@ pub fn normalize_header(raw: &str) -> String {
 }
 
 /// Resolves column positions from normalized headers when the user gave no schema.
-/// A separate `time` column (Stooq's `<TIME>`) is picked up when present.
 pub fn auto_detect(headers: &[String]) -> OxideResult<ColumnIndex> {
     let normalized: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
-    let time = normalized.iter().position(|h| h == "time");
     let hint = "pass a schema mapping your columns to canonical fields";
-    locate(&normalized, time, hint, |header, field| {
+    locate(&normalized, hint, |header, field| {
         aliases(field).contains(&header)
     })
 }
@@ -145,7 +141,6 @@ pub fn auto_detect(headers: &[String]) -> OxideResult<ColumnIndex> {
 /// appended) if any field matches no column or more than one.
 fn locate(
     headers: &[String],
-    time: Option<usize>,
     hint: &str,
     matches: impl Fn(&str, CanonicalField) -> bool,
 ) -> OxideResult<ColumnIndex> {
@@ -176,7 +171,6 @@ fn locate(
     let [timestamp, open, high, low, close, volume] = found.map(|(_, hits)| hits[0]);
     Ok(ColumnIndex {
         timestamp,
-        time,
         open,
         high,
         low,
