@@ -150,6 +150,7 @@ mod tests {
             ("2024-01-02 25:00:00", None),
             ("20240102", Some("9:30")),
             ("2024-01-02-03", None),
+            ("99999999999999999-01-01", None),
         ];
         for (date, time) in cases {
             let err = parse_timestamp(date, time).unwrap_err();

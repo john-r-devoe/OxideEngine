@@ -337,4 +337,12 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("open"));
     }
+
+    #[test]
+    fn auto_detect_rejects_two_columns_matching_one_field() {
+        let err = auto_detect(&headers(&["Date", "Open", "High", "Low", "Close", "Vol", "Volume"]))
+            .unwrap_err();
+        assert!(matches!(err, OxideError::Schema(_)));
+        assert!(err.to_string().contains("volume"), "{err}");
+    }
 }
