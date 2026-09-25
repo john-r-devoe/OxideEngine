@@ -159,4 +159,107 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("'close'"));
     }
+
+    fn headers(items: &[&str]) -> Vec<String> {
+        items.iter().map(|h| h.to_string()).collect()
+    }
+
+    fn custom_schema() -> ColumnSchema {
+        ColumnSchema::from_mapping(pairs(&[
+            ("Date", "timestamp"),
+            ("Open", "open"),
+            ("High", "high"),
+            ("Low", "low"),
+            ("Close", "close"),
+            ("Vol", "volume"),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn normalizes_brackets_whitespace_and_case() {
+        assert_eq!(normalize_header("<CLOSE>"), "close");
+        assert_eq!(normalize_header("  Vol "), "vol");
+        assert_eq!(normalize_header("< Date >"), "date");
+    }
+
+    #[test]
+    fn auto_detects_stooq_headers_with_time_column() {
+        let index = auto_detect(&headers(&[
+            "<TICKER>", "<PER>", "<DATE>", "<TIME>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>",
+            "<VOL>", "<OPENINT>",
+        ]))
+        .unwrap();
+        let expected = ColumnIndex {
+            timestamp: 2,
+            time: Some(3),
+            open: 4,
+            high: 5,
+            low: 6,
+            close: 7,
+            volume: 8,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn auto_detects_plain_headers_in_any_order() {
+        let index =
+            auto_detect(&headers(&["Volume", "Close", "Low", "High", "Open", "Timestamp"])).unwrap();
+        let expected = ColumnIndex {
+            timestamp: 5,
+            time: None,
+            open: 4,
+            high: 3,
+            low: 2,
+            close: 1,
+            volume: 0,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn auto_detect_names_every_missing_field() {
+        let err = auto_detect(&headers(&["Date", "Open", "Price"])).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, OxideError::Schema(_)));
+        for missing in ["high", "low", "close", "volume"] {
+            assert!(message.contains(missing), "{message}");
+        }
+    }
+
+    #[test]
+    fn resolves_user_schema_against_header() {
+        let index = custom_schema()
+            .resolve(&headers(&["Vol", "Date", "Open", "High", "Low", "Close"]))
+            .unwrap();
+        let expected = ColumnIndex {
+            timestamp: 1,
+            time: None,
+            open: 2,
+            high: 3,
+            low: 4,
+            close: 5,
+            volume: 0,
+        };
+        assert_eq!(index, expected);
+    }
+
+    #[test]
+    fn resolve_errors_when_mapped_column_is_absent_from_header() {
+        let err = custom_schema()
+            .resolve(&headers(&["Date", "Open", "High", "Low", "Vol"]))
+            .unwrap_err();
+        assert!(matches!(err, OxideError::Schema(_)));
+        assert!(err.to_string().contains("close"));
+    }
+
+    #[test]
+    fn resolve_errors_when_schema_does_not_cover_every_field() {
+        let schema = ColumnSchema::from_mapping(pairs(&[("Date", "timestamp")])).unwrap();
+        let err = schema
+            .resolve(&headers(&["Date", "Open", "High", "Low", "Close", "Vol"]))
+            .unwrap_err();
+        assert!(err.to_string().contains("open"));
+    }
 }
