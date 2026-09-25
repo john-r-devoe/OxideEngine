@@ -110,55 +110,50 @@ mod tests {
     #[test]
     fn parses_supported_date_formats() {
         let cases = [
-            ("20240102", None, JAN_2_2024_MS),
-            ("20240102", Some("093000"), JAN_2_2024_MS + NINE_THIRTY_MS),
-            ("2024-01-02", None, JAN_2_2024_MS),
-            (
-                "2024-01-02",
-                Some("09:30:00"),
-                JAN_2_2024_MS + NINE_THIRTY_MS,
-            ),
-            ("2024-01-02 09:30:00", None, JAN_2_2024_MS + NINE_THIRTY_MS),
-            ("2024-01-02T09:30:00Z", None, JAN_2_2024_MS + NINE_THIRTY_MS),
-            (" 2024-01-02 ", None, JAN_2_2024_MS),
-            ("1704153600", None, JAN_2_2024_MS),
-            ("1704153600000", None, JAN_2_2024_MS),
-            ("1970-01-01", None, 0),
+            ("20240102", JAN_2_2024_MS),
+            ("2024-01-02", JAN_2_2024_MS),
+            ("2024-01-02 09:30:00", JAN_2_2024_MS + NINE_THIRTY_MS),
+            ("2024-01-02T09:30:00", JAN_2_2024_MS + NINE_THIRTY_MS),
+            (" 2024-01-02 ", JAN_2_2024_MS),
+            ("1704153600", JAN_2_2024_MS),
+            ("1704153600000", JAN_2_2024_MS),
+            ("1970-01-01", 0),
         ];
-        for (date, time, expected) in cases {
-            assert_eq!(
-                parse_timestamp(date, time).unwrap(),
-                expected,
-                "{date} {time:?}"
-            );
+        for (cell, expected) in cases {
+            assert_eq!(parse_timestamp(cell).unwrap(), expected, "{cell}");
         }
     }
 
     #[test]
     fn accepts_leap_day() {
-        let feb_29 = parse_timestamp("2024-02-29", None).unwrap();
-        let mar_1 = parse_timestamp("2024-03-01", None).unwrap();
+        let feb_29 = parse_timestamp("2024-02-29").unwrap();
+        let mar_1 = parse_timestamp("2024-03-01").unwrap();
         assert_eq!(mar_1 - feb_29, 86_400_000);
     }
 
     #[test]
     fn rejects_invalid_dates_and_times() {
         let cases = [
-            ("", None),
-            ("abc", None),
-            ("2024-13-01", None),
-            ("2023-02-29", None),
-            ("2024-01-02 25:00:00", None),
-            ("20240102", Some("9:30")),
-            ("2024-01-02-03", None),
-            ("99999999999999999-01-01", None),
+            "",
+            "abc",
+            "2024-13-01",
+            "2023-02-29",
+            "2024-01-02 25:00:00",
+            "2024-01-02 093000",
+            "2024-01-02 9:30:00",
+            "2024-01-02-03",
+            "99999999999999999-01-01",
         ];
-        for (date, time) in cases {
-            let err = parse_timestamp(date, time).unwrap_err();
-            assert!(
-                matches!(err, OxideError::InvalidBar(_)),
-                "{date} {time:?}: {err}"
-            );
+        for cell in cases {
+            let err = parse_timestamp(cell).unwrap_err();
+            assert!(matches!(err, OxideError::InvalidBar(_)), "{cell}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_timezone_designators() {
+        for cell in ["2024-01-02T09:30:00Z", "2024-01-02T09:30:00+02:00", "2024-01-02 09:30:00-05:00"] {
+            assert!(parse_timestamp(cell).is_err(), "{cell}");
         }
     }
 }

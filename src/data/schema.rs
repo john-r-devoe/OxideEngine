@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_detects_stooq_headers_with_time_column() {
+    fn auto_detects_stooq_headers_ignoring_time_column() {
         let index = auto_detect(&headers(&[
             "<TICKER>",
             "<PER>",
@@ -265,7 +265,6 @@ mod tests {
         .unwrap();
         let expected = ColumnIndex {
             timestamp: 2,
-            time: Some(3),
             open: 4,
             high: 5,
             low: 6,
@@ -288,7 +287,6 @@ mod tests {
         .unwrap();
         let expected = ColumnIndex {
             timestamp: 5,
-            time: None,
             open: 4,
             high: 3,
             low: 2,
@@ -315,7 +313,6 @@ mod tests {
             .unwrap();
         let expected = ColumnIndex {
             timestamp: 1,
-            time: None,
             open: 2,
             high: 3,
             low: 4,

@@ -80,3 +80,25 @@ def test_unrecognized_headers_without_schema_raise_value_error(tmp_path: Path):
 def test_missing_file_raises_os_error(tmp_path: Path):
     with pytest.raises(OSError):
         oxide.data_loader.from_csv(str(tmp_path / "missing.csv"))
+
+
+def test_loads_intraday_datetime_column_without_schema(tmp_path: Path):
+    path = tmp_path / "AMZN.csv"
+    path.write_text(
+        "timestamp,open,high,low,close,volume\n"
+        "2024-01-02 09:30:00,10,11,9.5,10.5,100\n"
+        "2024-01-02 09:31:00,10.5,11,10,10.8,200\n"
+    )
+
+    ticker = oxide.data_loader.from_csv(path)
+
+    assert ticker.symbol == "AMZN"
+    assert ticker[1].timestamp - ticker[0].timestamp == 60_000
+
+
+def test_timezone_designator_raises_value_error(tmp_path: Path):
+    path = tmp_path / "x.csv"
+    path.write_text("timestamp,open,high,low,close,volume\n2024-01-02T09:30:00Z,10,11,9.5,10.5,100\n")
+
+    with pytest.raises(ValueError, match="row 1"):
+        oxide.data_loader.from_csv(path)
