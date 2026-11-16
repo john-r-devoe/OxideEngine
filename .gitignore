@@ -40,6 +40,8 @@ coverage.xml
 # ---------------------------------------------------------------------------
 # Local market data (keep committed test fixtures under tests/fixtures/)
 /data/
+# Generated reports from examples/test.py
+/examples/output/
 .env
 .env.*
 
