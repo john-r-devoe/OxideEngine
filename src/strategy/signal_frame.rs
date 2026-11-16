@@ -44,30 +44,51 @@ impl SignalFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::{Bar, Ticker};
 
-    fn universe(symbols: &[&str]) -> HashSet<String> {
-        symbols.iter().map(|s| s.to_string()).collect()
+    fn ticker(symbol: &str, n_bars: i64) -> Ticker {
+        let bars = (0..n_bars)
+            .map(|t| Bar::new(t, 1.0, 1.0, 1.0, 1.0, 0.0).unwrap())
+            .collect();
+        Ticker::new(symbol, bars).unwrap()
     }
 
     #[test]
-    fn accepts_rows_with_known_symbols_and_holds() {
-        let rows = vec![
-            SignalRow::new(),
-            SignalRow::from([("AAPL".to_string(), Signal::Flat)]),
-        ];
-        let frame = SignalFrame::new(rows, &universe(&["AAPL"])).unwrap();
-        assert_eq!(frame.len(), 2);
+    fn looks_up_signal_by_symbol_and_bar_index() {
+        let signals = SymbolSignals::from([(
+            "AAPL".to_string(),
+            vec![None, Some(Signal::Flat), None],
+        )]);
+        let frame = SignalFrame::new(signals, &[ticker("AAPL", 3)]).unwrap();
+        assert_eq!(frame.signal("AAPL", 1), Some(Signal::Flat));
+        assert_eq!(frame.signal("AAPL", 0), None);
     }
 
     #[test]
-    fn rejects_unknown_symbol_with_row_index() {
-        let rows = vec![
-            SignalRow::new(),
-            SignalRow::from([("TSLA".to_string(), Signal::Flat)]),
-        ];
-        let err = SignalFrame::new(rows, &universe(&["AAPL"]))
+    fn omitted_symbol_holds_on_every_bar() {
+        let signals = SymbolSignals::from([("AAPL".to_string(), vec![None])]);
+        let frame = SignalFrame::new(signals, &[ticker("AAPL", 1), ticker("MSFT", 4)]).unwrap();
+        assert_eq!(frame.signal("MSFT", 3), None);
+    }
+
+    #[test]
+    fn rejects_unknown_symbol() {
+        let signals = SymbolSignals::from([("TSLA".to_string(), vec![None])]);
+        let err = SignalFrame::new(signals, &[ticker("AAPL", 1)])
             .unwrap_err()
             .to_string();
-        assert!(err.contains("index 1") && err.contains("TSLA"), "{err}");
+        assert!(err.contains("unknown symbol 'TSLA'"), "{err}");
+    }
+
+    #[test]
+    fn rejects_length_that_differs_from_bar_count() {
+        let signals = SymbolSignals::from([("AAPL".to_string(), vec![None, None])]);
+        let err = SignalFrame::new(signals, &[ticker("AAPL", 3)])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("'AAPL'") && err.contains("2 entries") && err.contains("3 bars"),
+            "{err}"
+        );
     }
 }

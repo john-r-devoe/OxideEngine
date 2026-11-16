@@ -11,15 +11,14 @@ from oxide_engine import Signal
 
 
 class SpyStrategy:
-    """Records every call and returns a valid all-hold signal list."""
+    """Records every call and returns a valid all-hold signal dict."""
 
     def __init__(self):
         self.calls = []
 
     def generate_signals(self, data):
         self.calls.append(data)
-        n = max(len(bars) for bars in data.values())
-        return [{symbol: None for symbol in data} for _ in range(n)]
+        return {symbol: [None] * len(bars) for symbol, bars in data.items()}
 
 
 class ReturnsFn:
@@ -49,27 +48,39 @@ def test_strategy_without_generate_signals_raises_attribute_error(aapl, config):
         oxide.run_backtest(strategy=object(), data=[aapl], config=config)
 
 
-def test_non_list_return_raises_type_error(aapl, config):
-    with pytest.raises(TypeError, match="list"):
-        oxide.run_backtest(strategy=ReturnsFn(lambda d: "nope"), data=[aapl], config=config)
+def test_non_dict_return_raises_type_error(aapl, config):
+    with pytest.raises(TypeError, match="dict"):
+        oxide.run_backtest(strategy=ReturnsFn(lambda d: [None] * len(aapl)), data=[aapl], config=config)
 
 
-def test_non_dict_row_raises_type_error_with_index(aapl, config):
-    strategy = ReturnsFn(lambda d: [{"AAPL": None}, ["not", "a", "dict"]])
+def test_non_str_symbol_key_raises_type_error(aapl, config):
+    with pytest.raises(TypeError, match="non-str"):
+        oxide.run_backtest(strategy=ReturnsFn(lambda d: {1: [None]}), data=[aapl], config=config)
 
-    with pytest.raises(TypeError, match="index 1"):
+
+def test_non_list_signals_for_symbol_raise_type_error(aapl, config):
+    with pytest.raises(TypeError, match=r"'AAPL'.*list"):
+        oxide.run_backtest(strategy=ReturnsFn(lambda d: {"AAPL": Signal.flat()}), data=[aapl], config=config)
+
+
+def test_non_signal_element_raises_type_error_with_symbol_and_index(aapl, config):
+    signals = [None] * len(aapl)
+    signals[1] = 0.5
+    strategy = ReturnsFn(lambda d: {"AAPL": signals})
+
+    with pytest.raises(TypeError, match=r"'AAPL' at index 1"):
         oxide.run_backtest(strategy=strategy, data=[aapl], config=config)
 
 
-def test_non_signal_value_raises_type_error_with_index_and_symbol(aapl, config):
-    strategy = ReturnsFn(lambda d: [{"AAPL": Signal.flat()}, {"AAPL": 0.5}])
+def test_signal_count_must_match_symbol_bar_count(aapl, config):
+    strategy = ReturnsFn(lambda d: {"AAPL": [None] * (len(aapl) - 1)})
 
-    with pytest.raises(TypeError, match=r"index 1.*AAPL"):
+    with pytest.raises(ValueError, match=r"'AAPL'.*entries.*bars"):
         oxide.run_backtest(strategy=strategy, data=[aapl], config=config)
 
 
 def test_unknown_symbol_in_signals_raises_value_error(aapl, config):
-    strategy = ReturnsFn(lambda d: [{"TSLA": Signal.long(0.5)}])
+    strategy = ReturnsFn(lambda d: {"TSLA": [Signal.long(0.5)]})
 
     with pytest.raises(ValueError, match="TSLA"):
         oxide.run_backtest(strategy=strategy, data=[aapl], config=config)
