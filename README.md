@@ -2,14 +2,13 @@
 
 A backtesting engine where **strategies are written in Python** and **execution runs in Rust**.
 
-Your strategy is called **once** with every bar for every asset and returns every
-signal for every timestep. Rust then turns those weights into orders, fills,
+Your strategy is called **once** with every bar for every asset and returns one
+signal per bar for each asset. Rust then turns those weights into orders, fills,
 portfolio state, and an equity curve, without calling back into Python.
 
-> **Status: skeleton.** The public API, domain model, and PyO3 bindings are in
-> place and tested. Input validation works. CSV parsing, fill simulation,
-> portfolio accounting, metrics, and the event loop are stubbed and raise
-> `NotImplementedError`. See [Roadmap](#roadmap).
+> **Status:** CSV loading, sizing, fill simulation, portfolio accounting,
+> metrics, and the event loop are implemented. Costs are a flat commission and a
+> flat slippage percentage from `BacktestConfig`.
 
 ## Usage
 
@@ -25,19 +24,19 @@ msft = oxide.data_loader.from_csv("data.csv", schema={           # or map your o
 })
 
 class MACrossover:
-    def generate_signals(self, data: dict) -> list[dict]:
+    def generate_signals(self, data: dict) -> dict[str, list]:
         closes = pd.Series([b.close for b in data["AAPL"]])
         fast = closes.rolling(20).mean()
         slow = closes.rolling(50).mean()
         signals = []
-        for i in range(len(closes)):
+        for i in range(len(closes)):            # one entry per AAPL bar
             if fast[i] > slow[i] and fast[i-1] <= slow[i-1]:
-                signals.append({"AAPL": Signal.long(0.9)})
+                signals.append(Signal.long(0.9))
             elif fast[i] < slow[i] and fast[i-1] >= slow[i-1]:
-                signals.append({"AAPL": Signal.flat()})
+                signals.append(Signal.flat())
             else:
-                signals.append({"AAPL": None})
-        return signals
+                signals.append(None)            # hold
+        return {"AAPL": signals}                # MSFT omitted = hold throughout
 
 config = oxide.BacktestConfig(starting_cash=100_000, commission=0.001, slippage=0.0005)
 result = oxide.run_backtest(strategy=MACrossover(), data=[aapl, msft], config=config)
@@ -68,7 +67,55 @@ trades = pd.DataFrame([t.to_dict() for t in result.trades])
 `Signal.long(w)`, `Signal.short(w)`, `Signal.flat()`, `Signal.scale_in(w)`, `Signal.scale_out(w)`.
 `w` is a fraction of portfolio equity in `[0, 1]`. `None` means hold. Python only
 expresses the target exposure. Rust resolves weight → dollars → units → order → fill.
-A signal on bar `t` fills at the open of bar `t+1`.
+
+### Strategy contract
+
+```python
+def generate_signals(self, data: dict[str, list[Bar]]) -> dict[str, list[Signal | None]]
+```
+
+- `signals[sym][i]` applies to `data[sym][i]`. Each list has exactly `len(data[sym])`
+  entries; a symbol you omit holds on every bar.
+- **Fill timing:** a signal on bar `i` of a symbol is sized at that bar's close and
+  fills at the open of **that symbol's** bar `i + 1`, however much time passes in
+  between (a gap, a holiday, a different trading calendar). A signal on a symbol's
+  last bar never fills.
+- Fill price is `open × (1 ± slippage)` (worse for you); commission is
+  `|qty| × price × commission`.
+- Signals from different symbols at the same timestamp are sized against the same
+  equity snapshot. Positions still open at the end are closed at each symbol's
+  final close, with the same costs.
+- Rust merges all timestamps into one timeline internally to order events and to
+  produce one `equity_curve` point per timestamp. Strategies never index into it.
+
+### Multiple tickers and look-ahead
+
+Tickers may have different dates. For a cross-ticker rule, align by timestamp and
+only use data **known at or before** the bar you are signalling on:
+
+```python
+class LeadLag:  # trade MSFT, only reacting when an MSFT bar arrives
+    def generate_signals(self, data):
+        aapl = pd.Series({b.timestamp: b.close for b in data["AAPL"]})
+        msft_ts = [b.timestamp for b in data["MSFT"]]
+        known = aapl.reindex(aapl.index.union(msft_ts)).ffill().reindex(msft_ts)
+        rising = (known.diff() > 0).tolist()
+        return {"MSFT": [Signal.long(0.5) if up else Signal.flat() for up in rising]}
+```
+
+Before trusting a backtest (and before trading a strategy live), check it for
+look-ahead bias:
+
+```python
+from oxide_engine.testing import assert_causal
+assert_causal(LeadLag(), [aapl, msft])   # AssertionError names the symbol and bar index
+```
+
+It reruns `generate_signals` on truncated data and fails if any signal changes once
+later bars exist (a wrong `shift`, `center=True`, backward fills, whole-history
+normalization). Because signals are per bar, the same code runs live: on each new
+bar, call `generate_signals` on the history so far and act on each symbol's last
+entry.
 
 ### Data
 
@@ -109,19 +156,13 @@ src/
   metrics.rs        Sharpe, Sortino, Calmar, drawdown, ...
   backtest/         BacktestConfig, engine (event loop), BacktestResult
   bindings/         ALL PyO3 wrappers + run_backtest
-python/oxide_engine/  __init__.py, data_loader.py, _core.pyi, py.typed
-tests/              pytest suite (strict-xfail tests = spec for stubbed features)
+python/oxide_engine/  __init__.py, data_loader.py, testing.py (assert_causal), _core.pyi, py.typed
+tests/              pytest suite
 examples/           runnable strategies
 ```
 
-## Roadmap
+## Not modelled yet
 
-1. `data::csv_loader` + `data::timestamp` + `schema::{normalize_header, auto_detect, resolve}`
-2. `backtest::engine::build_timeline`
-3. `execution::sizing`, `execution::simulator`
-4. `portfolio::Portfolio::apply_fill` (trade records)
-5. `metrics::*`
-6. `backtest::engine::run`
-
-Every step has a strict-xfail test in `tests/`. When a feature starts passing,
-its xfail test XPASSes and fails the run until you remove the marker.
+Fractional quantities are allowed (no lot size). Slippage and commission are flat
+percentages: no volume, spread, or partial-fill models, and no short-borrow
+constraints.

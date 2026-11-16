@@ -10,19 +10,19 @@ from oxide_engine import Signal
 
 
 class MACrossover:
-    def generate_signals(self, data: dict) -> list[dict]:
+    def generate_signals(self, data: dict) -> dict[str, list]:
         closes = pd.Series([b.close for b in data["AAPL"]])
         fast = closes.rolling(20).mean()
         slow = closes.rolling(50).mean()
         signals = []
-        for i in range(len(closes)):
+        for i in range(len(closes)):  # one entry per AAPL bar
             if fast[i] > slow[i] and fast[i - 1] <= slow[i - 1]:
-                signals.append({"AAPL": Signal.long(0.9)})
+                signals.append(Signal.long(0.9))
             elif fast[i] < slow[i] and fast[i - 1] >= slow[i - 1]:
-                signals.append({"AAPL": Signal.flat()})
+                signals.append(Signal.flat())
             else:
-                signals.append({"AAPL": None})
-        return signals
+                signals.append(None)  # hold
+        return {"AAPL": signals}  # MSFT omitted = hold throughout
 
 
 def main() -> None:
