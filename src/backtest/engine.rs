@@ -78,6 +78,32 @@ mod tests {
             .contains("data"));
     }
 
+    fn ticker_at(symbol: &str, timestamps: &[i64]) -> Ticker {
+        let bars = timestamps
+            .iter()
+            .map(|&t| Bar::new(t, 1.0, 1.0, 1.0, 1.0, 0.0).unwrap())
+            .collect();
+        Ticker::new(symbol, bars).unwrap()
+    }
+
+    #[test]
+    fn timeline_of_one_ticker_is_its_timestamps() {
+        let timeline = build_timeline(&[ticker_at("A", &[1, 2, 3])]).unwrap();
+        assert_eq!(timeline, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn timeline_is_sorted_deduplicated_union() {
+        let tickers = [ticker_at("A", &[1, 3, 5]), ticker_at("B", &[2, 3, 6])];
+        assert_eq!(build_timeline(&tickers).unwrap(), vec![1, 2, 3, 5, 6]);
+    }
+
+    #[test]
+    fn timeline_of_subset_equals_superset() {
+        let tickers = [ticker_at("A", &[1, 2, 3, 4]), ticker_at("B", &[2, 4])];
+        assert_eq!(build_timeline(&tickers).unwrap(), vec![1, 2, 3, 4]);
+    }
+
     #[test]
     fn universe_rejects_duplicate_symbols() {
         let err = validate_universe(&[ticker("A"), ticker("A")]).unwrap_err();
