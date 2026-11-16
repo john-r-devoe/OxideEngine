@@ -76,4 +76,28 @@ mod tests {
         let err = Ticker::new("AAPL", vec![]).unwrap_err();
         assert!(err.to_string().contains("bars"));
     }
+
+    fn bar_at(timestamp: i64) -> Bar {
+        Bar::new(timestamp, 1.0, 1.0, 1.0, 1.0, 0.0).unwrap()
+    }
+
+    #[test]
+    fn accepts_strictly_increasing_timestamps() {
+        let ticker = Ticker::new("AAPL", vec![bar_at(1), bar_at(2), bar_at(5)]).unwrap();
+        assert_eq!(ticker.len(), 3);
+    }
+
+    #[test]
+    fn rejects_out_of_order_timestamps_with_index() {
+        let err = Ticker::new("AAPL", vec![bar_at(2), bar_at(1)])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("increasing") && err.contains("index 1"), "{err}");
+    }
+
+    #[test]
+    fn rejects_duplicate_timestamps() {
+        let err = Ticker::new("AAPL", vec![bar_at(1), bar_at(1)]).unwrap_err();
+        assert!(err.to_string().contains("increasing"));
+    }
 }

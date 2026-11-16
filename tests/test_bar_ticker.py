@@ -61,3 +61,9 @@ def test_ticker_rejects_blank_symbol(symbol):
 def test_ticker_rejects_empty_bars():
     with pytest.raises(ValueError, match="bars"):
         oxide.Ticker("AAPL", [])
+
+
+def test_ticker_rejects_non_increasing_timestamps():
+    bars = [make_bar(timestamp=JAN_2_2024_MS + 1), make_bar(timestamp=JAN_2_2024_MS)]
+    with pytest.raises(ValueError, match="increasing"):
+        oxide.Ticker("AAPL", bars)
