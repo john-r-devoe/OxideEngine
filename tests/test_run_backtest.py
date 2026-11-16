@@ -32,8 +32,9 @@ class ReturnsFn:
 def test_generate_signals_is_called_exactly_once_with_all_assets(aapl, msft, config):
     strategy = SpyStrategy()
 
-    with pytest.raises(NotImplementedError):  # engine loop is stubbed
-        oxide.run_backtest(strategy=strategy, data=[aapl, msft], config=config)
+    result = oxide.run_backtest(strategy=strategy, data=[aapl, msft], config=config)
+
+    assert isinstance(result, oxide.BacktestResult)
 
     assert len(strategy.calls) == 1
     data = strategy.calls[0]
