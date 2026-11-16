@@ -7,14 +7,24 @@ pub struct Position {
     pub quantity: f64,
     /// Volume-weighted average entry price of the open quantity.
     pub avg_entry_price: f64,
+    /// Timestamp of the fill that opened the position.
+    pub entry_timestamp: i64,
+    /// Timeline step of the fill that opened the position.
+    pub entry_step: usize,
+    /// Entry commission not yet attributed to a closed trade.
+    pub entry_commission: f64,
 }
 
 impl Position {
+    /// A position with no entry history (entry time, step, and commission zero).
     pub fn new(symbol: impl Into<String>, quantity: f64, avg_entry_price: f64) -> Self {
         Self {
             symbol: symbol.into(),
             quantity,
             avg_entry_price,
+            entry_timestamp: 0,
+            entry_step: 0,
+            entry_commission: 0.0,
         }
     }
 
