@@ -13,10 +13,8 @@ pub struct Ticker {
 }
 
 impl Ticker {
-    /// Rejects blank symbols and empty series.
-    ///
-    /// TODO(data): also require strictly increasing timestamps once the CSV
-    /// loader defines its sort/dedup policy.
+    /// Rejects blank symbols, empty series, and timestamps that are not
+    /// strictly increasing (the engine relies on chronological, unique bars).
     pub fn new(symbol: impl Into<String>, bars: Vec<Bar>) -> OxideResult<Self> {
         let symbol = symbol.into().trim().to_string();
         if symbol.is_empty() {
@@ -25,6 +23,11 @@ impl Ticker {
         if bars.is_empty() {
             return Err(OxideError::InvalidTicker(format!(
                 "bars for '{symbol}' must not be empty"
+            )));
+        }
+        if let Some(index) = first_non_increasing(&bars) {
+            return Err(OxideError::InvalidTicker(format!(
+                "bars for '{symbol}' must have strictly increasing timestamps (violated at index {index})"
             )));
         }
         Ok(Self {
@@ -49,6 +52,13 @@ impl Ticker {
     pub fn is_empty(&self) -> bool {
         self.bars.is_empty()
     }
+}
+
+/// Index of the first bar whose timestamp is not greater than its predecessor's.
+fn first_non_increasing(bars: &[Bar]) -> Option<usize> {
+    bars.windows(2)
+        .position(|pair| pair[1].timestamp <= pair[0].timestamp)
+        .map(|i| i + 1)
 }
 
 #[cfg(test)]
