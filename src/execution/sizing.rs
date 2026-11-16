@@ -4,36 +4,73 @@ use crate::error::{OxideError, OxideResult};
 use crate::execution::Order;
 use crate::strategy::Signal;
 
+/// Quantity changes smaller than this are treated as "no order" (float noise).
+pub const MIN_ORDER_QUANTITY: f64 = 1e-9;
+
 /// Signed units the portfolio should hold after acting on `signal`.
 ///
 /// * `Long(w)`  -> `+w * equity / price`
 /// * `Short(w)` -> `-w * equity / price`
-/// * `Flat`     -> `0`
+/// * `Flat`     -> `0` (valid even when equity or price is unusable)
 /// * `ScaleIn(w)` / `ScaleOut(w)` -> current ± `w * equity / price` in the current
 ///   direction (`ScaleOut` never crosses zero; `ScaleIn` on a flat book is a no-op).
+///
+/// Errors when a weighted signal is sized against non-finite or non-positive
+/// equity or price.
 pub fn target_quantity(
-    _signal: Signal,
-    _current_quantity: f64,
-    _equity: f64,
-    _price: f64,
+    signal: Signal,
+    current_quantity: f64,
+    equity: f64,
+    price: f64,
 ) -> OxideResult<f64> {
-    Err(OxideError::NotImplemented(
-        "signal sizing (execution::sizing::target_quantity)",
-    ))
+    let Some(weight) = signal.weight() else {
+        return Ok(0.0); // Flat
+    };
+    let units = weight * sizing_base(equity, price)?;
+    let direction = current_quantity.signum();
+    Ok(match signal {
+        Signal::Long(_) => units,
+        Signal::Short(_) => -units,
+        Signal::ScaleIn(_) if current_quantity == 0.0 => 0.0,
+        Signal::ScaleIn(_) => current_quantity + direction * units,
+        Signal::ScaleOut(_) => direction * (current_quantity.abs() - units).max(0.0),
+        Signal::Flat => 0.0,
+    })
+}
+
+/// Units purchasable with the whole of `equity` at `price`.
+fn sizing_base(equity: f64, price: f64) -> OxideResult<f64> {
+    if !equity.is_finite() || equity <= 0.0 {
+        return Err(OxideError::InvalidInput(format!(
+            "cannot size a weighted signal: equity must be finite and > 0, got {equity}"
+        )));
+    }
+    if !price.is_finite() || price <= 0.0 {
+        return Err(OxideError::InvalidInput(format!(
+            "cannot size a weighted signal: price must be finite and > 0, got {price}"
+        )));
+    }
+    Ok(equity / price)
 }
 
 /// Builds the order moving `current_quantity` to the signal's target, or `None` if no change.
 pub fn resolve_order(
-    _symbol: &str,
-    _signal: Signal,
-    _current_quantity: f64,
-    _equity: f64,
-    _price: f64,
-    _signal_timestamp: i64,
+    symbol: &str,
+    signal: Signal,
+    current_quantity: f64,
+    equity: f64,
+    price: f64,
+    signal_timestamp: i64,
 ) -> OxideResult<Option<Order>> {
-    Err(OxideError::NotImplemented(
-        "order resolution (execution::sizing::resolve_order)",
-    ))
+    let delta = target_quantity(signal, current_quantity, equity, price)? - current_quantity;
+    if delta.abs() < MIN_ORDER_QUANTITY {
+        return Ok(None);
+    }
+    Ok(Some(Order {
+        symbol: symbol.to_string(),
+        quantity: delta,
+        signal_timestamp,
+    }))
 }
 
 #[cfg(test)]
@@ -85,8 +122,16 @@ mod tests {
 
     #[test]
     fn rejects_invalid_price_or_equity() {
-        for (equity, price) in [(EQUITY, 0.0), (EQUITY, f64::NAN), (0.0, PRICE), (f64::INFINITY, PRICE)] {
-            assert!(target_quantity(Signal::Long(0.5), 0.0, equity, price).is_err(), "{equity} {price}");
+        for (equity, price) in [
+            (EQUITY, 0.0),
+            (EQUITY, f64::NAN),
+            (0.0, PRICE),
+            (f64::INFINITY, PRICE),
+        ] {
+            assert!(
+                target_quantity(Signal::Long(0.5), 0.0, equity, price).is_err(),
+                "{equity} {price}"
+            );
         }
     }
 
@@ -110,9 +155,11 @@ mod tests {
 
     #[test]
     fn resolve_order_is_none_when_already_at_target() {
-        assert!(resolve_order("AAPL", Signal::Long(0.5), 50.0, EQUITY, PRICE, 0)
-            .unwrap()
-            .is_none());
+        assert!(
+            resolve_order("AAPL", Signal::Long(0.5), 50.0, EQUITY, PRICE, 0)
+                .unwrap()
+                .is_none()
+        );
         assert!(resolve_order("AAPL", Signal::Flat, 0.0, EQUITY, PRICE, 0)
             .unwrap()
             .is_none());
