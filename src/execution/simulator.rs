@@ -26,10 +26,33 @@ impl FillSimulator {
 
     /// Fills `order` against `bar`:
     /// price = `open × (1 ± slippage)`, commission = `|qty| × price × commission`.
-    pub fn fill(&self, _order: &Order, _bar: &Bar) -> OxideResult<Fill> {
-        Err(OxideError::NotImplemented(
-            "fill simulation (execution::simulator::FillSimulator::fill)",
-        ))
+    pub fn fill(&self, order: &Order, bar: &Bar) -> OxideResult<Fill> {
+        self.fill_at_price(order, bar.open, bar.timestamp)
+    }
+
+    /// Fills `order` at `reference_price` (e.g. the final close when liquidating),
+    /// applying the same flat slippage and commission as [`Self::fill`].
+    pub fn fill_at_price(
+        &self,
+        order: &Order,
+        reference_price: f64,
+        timestamp: i64,
+    ) -> OxideResult<Fill> {
+        if !order.quantity.is_finite() || order.quantity == 0.0 {
+            return Err(OxideError::InvalidInput(format!(
+                "order for '{}' must have a finite non-zero quantity, got {}",
+                order.symbol, order.quantity
+            )));
+        }
+        let direction = if order.is_buy() { 1.0 } else { -1.0 };
+        let price = reference_price * (1.0 + direction * self.slippage);
+        Ok(Fill {
+            symbol: order.symbol.clone(),
+            timestamp,
+            quantity: order.quantity,
+            price,
+            commission: order.quantity.abs() * price * self.commission,
+        })
     }
 }
 
