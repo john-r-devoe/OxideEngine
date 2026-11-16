@@ -164,4 +164,11 @@ mod tests {
             .unwrap()
             .is_none());
     }
+
+    #[test]
+    fn resolve_order_ignores_float_noise_relative_to_position_size() {
+        // target = 0.001 * 1e12 / 1 = 1e9; current differs by float noise only
+        let order = resolve_order("AAPL", Signal::Long(0.001), 1e9 + 1e-6, 1e12, 1.0, 0).unwrap();
+        assert!(order.is_none(), "{order:?}");
+    }
 }

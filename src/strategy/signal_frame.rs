@@ -95,4 +95,13 @@ mod tests {
             "{err}"
         );
     }
+
+    #[test]
+    fn length_error_message_has_no_stray_whitespace() {
+        let signals = SymbolSignals::from([("AAPL".to_string(), vec![None])]);
+        let err = SignalFrame::new(signals, &[ticker("AAPL", 2)])
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains("  "), "{err:?}");
+    }
 }

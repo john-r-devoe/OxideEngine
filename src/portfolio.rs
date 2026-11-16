@@ -367,4 +367,14 @@ mod tests {
         }
         assert_eq!(p.cash(), 1_000.0);
     }
+
+    #[test]
+    fn tiny_remainder_after_close_is_kept_not_dropped() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(1.0 + 5e-10, 10.0, 0.0, 1), 0).unwrap();
+        p.apply_fill(&fill(-1.0, 10.0, 0.0, 2), 1).unwrap();
+        let prices = HashMap::from([("A".to_string(), 10.0)]);
+        assert!(close(p.equity(&prices).unwrap(), 1_000.0));
+        assert!(p.quantity("A") > 0.0);
+    }
 }
