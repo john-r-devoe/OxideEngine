@@ -56,13 +56,144 @@ impl Portfolio {
             })
     }
 
-    /// Applies a fill: moves cash (incl. commission), updates the signed position and
-    /// its average entry price, and returns a [`Trade`] when a position is reduced,
-    /// closed, or flipped.
-    pub fn apply_fill(&mut self, _fill: &Fill) -> OxideResult<Option<Trade>> {
-        Err(OxideError::NotImplemented(
-            "fill accounting (portfolio::Portfolio::apply_fill)",
+    /// Symbols with an open (non-zero) position, in no particular order.
+    pub fn open_symbols(&self) -> impl Iterator<Item = &str> {
+        self.positions.keys().map(String::as_str)
+    }
+
+    pub fn has_open_positions(&self) -> bool {
+        !self.positions.is_empty()
+    }
+
+    /// Applies a fill executed at timeline `step`: moves cash (incl. commission),
+    /// updates the signed position and its average entry price, and returns a
+    /// [`Trade`] when a position is reduced, closed, or flipped.
+    pub fn apply_fill(&mut self, fill: &Fill, step: usize) -> OxideResult<Option<Trade>> {
+        validate_fill(fill)?;
+        self.cash -= fill.quantity * fill.price + fill.commission;
+        let Some(existing) = self.positions.remove(&fill.symbol) else {
+            self.positions.insert(
+                fill.symbol.clone(),
+                open_position(fill, step, fill.commission),
+            );
+            return Ok(None);
+        };
+        if existing.quantity.signum() == fill.quantity.signum() {
+            self.positions
+                .insert(fill.symbol.clone(), add_to_position(existing, fill));
+            return Ok(None);
+        }
+        let (trade, remainder) = reduce_position(existing, fill, step);
+        if let Some(position) = remainder {
+            self.positions.insert(fill.symbol.clone(), position);
+        }
+        Ok(Some(trade))
+    }
+}
+
+fn validate_fill(fill: &Fill) -> OxideResult<()> {
+    let valid = fill.quantity.is_finite()
+        && fill.quantity != 0.0
+        && fill.price.is_finite()
+        && fill.price > 0.0
+        && fill.commission.is_finite()
+        && fill.commission >= 0.0;
+    if valid {
+        Ok(())
+    } else {
+        Err(OxideError::InvalidInput(format!("invalid fill: {fill:?}")))
+    }
+}
+
+fn open_position(fill: &Fill, step: usize, commission: f64) -> Position {
+    Position {
+        symbol: fill.symbol.clone(),
+        quantity: fill.quantity,
+        avg_entry_price: fill.price,
+        entry_timestamp: fill.timestamp,
+        entry_step: step,
+        entry_commission: commission,
+    }
+}
+
+/// Same-direction fill: volume-weighted entry price, original entry time kept.
+fn add_to_position(position: Position, fill: &Fill) -> Position {
+    let quantity = position.quantity + fill.quantity;
+    let cost =
+        position.quantity.abs() * position.avg_entry_price + fill.quantity.abs() * fill.price;
+    Position {
+        quantity,
+        avg_entry_price: cost / quantity.abs(),
+        entry_commission: position.entry_commission + fill.commission,
+        ..position
+    }
+}
+
+/// Opposite-direction fill: closes up to the open quantity (emitting a trade)
+/// and opens any excess on the other side at the fill price. `closed` is the
+/// smaller of the two sizes, so at most one remainder is non-zero and exact
+/// comparisons never drop quantity.
+fn reduce_position(position: Position, fill: &Fill, step: usize) -> (Trade, Option<Position>) {
+    let open_abs = position.quantity.abs();
+    let fill_abs = fill.quantity.abs();
+    let closed = open_abs.min(fill_abs);
+    let exit_commission = fill.commission * closed / fill_abs;
+    let entry_commission = position.entry_commission * closed / open_abs;
+    let trade = closing_trade(
+        &position,
+        fill,
+        step,
+        closed,
+        entry_commission + exit_commission,
+    );
+
+    let remainder = if open_abs > closed {
+        Some(Position {
+            quantity: position.quantity.signum() * (open_abs - closed),
+            entry_commission: position.entry_commission - entry_commission,
+            ..position
+        })
+    } else if fill_abs > closed {
+        let flipped = Fill {
+            quantity: fill.quantity.signum() * (fill_abs - closed),
+            ..fill.clone()
+        };
+        Some(open_position(
+            &flipped,
+            step,
+            fill.commission - exit_commission,
         ))
+    } else {
+        None
+    };
+    (trade, remainder)
+}
+
+fn closing_trade(
+    position: &Position,
+    fill: &Fill,
+    step: usize,
+    closed: f64,
+    commission: f64,
+) -> Trade {
+    let direction = position.quantity.signum();
+    let pnl = direction * closed * (fill.price - position.avg_entry_price) - commission;
+    Trade {
+        symbol: position.symbol.clone(),
+        side: if direction > 0.0 {
+            TradeSide::Long
+        } else {
+            TradeSide::Short
+        },
+        quantity: closed,
+        entry_timestamp: position.entry_timestamp,
+        exit_timestamp: fill.timestamp,
+        entry_price: position.avg_entry_price,
+        exit_price: fill.price,
+        pnl,
+        return_pct: pnl / (closed * position.avg_entry_price),
+        commission,
+        bars_held: step.saturating_sub(position.entry_step),
     }
 }
 
@@ -99,5 +230,152 @@ mod tests {
             .positions
             .insert("L".into(), Position::new("L", 1.0, 5.0));
         assert!(portfolio.equity(&HashMap::new()).is_err());
+    }
+
+    const EPS: f64 = 1e-9;
+
+    fn fill(quantity: f64, price: f64, commission: f64, timestamp: i64) -> Fill {
+        Fill {
+            symbol: "A".into(),
+            timestamp,
+            quantity,
+            price,
+            commission,
+        }
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < EPS
+    }
+
+    #[test]
+    fn opening_fill_moves_cash_and_creates_position() {
+        let mut p = Portfolio::new(1_000.0);
+        let trade = p.apply_fill(&fill(10.0, 10.0, 1.0, 100), 0).unwrap();
+        assert!(trade.is_none());
+        assert!(close(p.cash(), 1_000.0 - 100.0 - 1.0));
+        let pos = p.position("A").unwrap();
+        assert_eq!(pos.quantity, 10.0);
+        assert_eq!(pos.avg_entry_price, 10.0);
+        assert_eq!(pos.entry_timestamp, 100);
+        assert_eq!(pos.entry_step, 0);
+    }
+
+    #[test]
+    fn adding_to_position_uses_volume_weighted_entry_and_keeps_entry_time() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(10.0, 10.0, 1.0, 100), 0).unwrap();
+        p.apply_fill(&fill(30.0, 14.0, 2.0, 200), 3).unwrap();
+        let pos = p.position("A").unwrap();
+        assert_eq!(pos.quantity, 40.0);
+        assert!(close(pos.avg_entry_price, (100.0 + 420.0) / 40.0));
+        assert_eq!(pos.entry_timestamp, 100);
+        assert!(close(pos.entry_commission, 3.0));
+    }
+
+    #[test]
+    fn full_close_emits_long_trade_with_net_pnl() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(10.0, 10.0, 1.0, 100), 2).unwrap();
+        let t = p
+            .apply_fill(&fill(-10.0, 12.0, 1.2, 500), 7)
+            .unwrap()
+            .unwrap();
+        assert_eq!(t.side, TradeSide::Long);
+        assert_eq!(t.quantity, 10.0);
+        assert_eq!((t.entry_timestamp, t.exit_timestamp), (100, 500));
+        assert_eq!((t.entry_price, t.exit_price), (10.0, 12.0));
+        assert!(close(t.commission, 2.2));
+        assert!(close(t.pnl, 20.0 - 2.2));
+        assert!(close(t.return_pct, (20.0 - 2.2) / 100.0));
+        assert_eq!(t.bars_held, 5);
+        assert!(p.position("A").is_none());
+        assert!(close(p.cash(), 1_000.0 + 20.0 - 2.2));
+    }
+
+    #[test]
+    fn partial_close_allocates_entry_commission_pro_rata() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(10.0, 10.0, 2.0, 100), 0).unwrap();
+        let t = p
+            .apply_fill(&fill(-4.0, 11.0, 0.4, 200), 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(t.quantity, 4.0);
+        assert!(close(t.commission, 0.8 + 0.4));
+        assert!(close(t.pnl, 4.0 - 1.2));
+        let pos = p.position("A").unwrap();
+        assert_eq!(pos.quantity, 6.0);
+        assert_eq!(pos.avg_entry_price, 10.0);
+        assert!(close(pos.entry_commission, 1.2));
+    }
+
+    #[test]
+    fn flip_closes_old_side_and_opens_remainder_at_fill() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(10.0, 10.0, 1.0, 100), 0).unwrap();
+        let t = p
+            .apply_fill(&fill(-15.0, 12.0, 1.5, 300), 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!((t.side, t.quantity), (TradeSide::Long, 10.0));
+        assert!(close(t.commission, 1.0 + 1.0));
+        let pos = p.position("A").unwrap();
+        assert_eq!(pos.quantity, -5.0);
+        assert_eq!(pos.avg_entry_price, 12.0);
+        assert_eq!((pos.entry_timestamp, pos.entry_step), (300, 4));
+        assert!(close(pos.entry_commission, 0.5));
+    }
+
+    #[test]
+    fn short_round_trip_profits_when_price_falls() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(-10.0, 10.0, 0.0, 100), 0).unwrap();
+        assert!(close(p.cash(), 1_100.0));
+        let t = p
+            .apply_fill(&fill(10.0, 8.0, 0.0, 200), 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(t.side, TradeSide::Short);
+        assert!(close(t.pnl, 20.0));
+        assert!(close(t.return_pct, 0.2));
+        assert!(close(p.cash(), 1_020.0));
+    }
+
+    #[test]
+    fn equity_invariant_holds_after_fills() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(10.0, 10.0, 1.0, 1), 0).unwrap();
+        p.apply_fill(&fill(-25.0, 11.0, 2.0, 2), 1).unwrap();
+        let prices = HashMap::from([("A".to_string(), 9.0)]);
+        let expected = p.cash() + p.quantity("A") * 9.0;
+        assert!(close(p.equity(&prices).unwrap(), expected));
+        // realized 10*(11-10) - (1 + 2*10/25); open short 15 @ 11 marked at 9 => +30;
+        // open commission 2*15/25 already paid from cash.
+        assert!(close(expected, 1_000.0 + 10.0 - 1.8 + 30.0 - 1.2));
+    }
+
+    #[test]
+    fn rejects_invalid_fill() {
+        let mut p = Portfolio::new(1_000.0);
+        for bad in [
+            fill(0.0, 10.0, 0.0, 0),
+            fill(1.0, 0.0, 0.0, 0),
+            fill(1.0, f64::NAN, 0.0, 0),
+            fill(1.0, 10.0, -1.0, 0),
+        ] {
+            assert!(p.apply_fill(&bad, 0).is_err(), "{bad:?}");
+        }
+        assert_eq!(p.cash(), 1_000.0);
+    }
+
+    #[test]
+    fn tiny_remainder_after_close_is_kept_not_dropped() {
+        let mut p = Portfolio::new(1_000.0);
+        p.apply_fill(&fill(1.0 + 5e-10, 10.0, 0.0, 1), 0).unwrap();
+        p.apply_fill(&fill(-1.0, 10.0, 0.0, 2), 1).unwrap();
+        let prices = HashMap::from([("A".to_string(), 10.0)]);
+        assert!(close(p.equity(&prices).unwrap(), 1_000.0));
+        assert!(p.quantity("A") > 0.0);
     }
 }

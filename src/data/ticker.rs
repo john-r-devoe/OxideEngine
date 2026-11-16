@@ -13,10 +13,8 @@ pub struct Ticker {
 }
 
 impl Ticker {
-    /// Rejects blank symbols and empty series.
-    ///
-    /// TODO(data): also require strictly increasing timestamps once the CSV
-    /// loader defines its sort/dedup policy.
+    /// Rejects blank symbols, empty series, and timestamps that are not
+    /// strictly increasing (the engine relies on chronological, unique bars).
     pub fn new(symbol: impl Into<String>, bars: Vec<Bar>) -> OxideResult<Self> {
         let symbol = symbol.into().trim().to_string();
         if symbol.is_empty() {
@@ -25,6 +23,11 @@ impl Ticker {
         if bars.is_empty() {
             return Err(OxideError::InvalidTicker(format!(
                 "bars for '{symbol}' must not be empty"
+            )));
+        }
+        if let Some(index) = first_non_increasing(&bars) {
+            return Err(OxideError::InvalidTicker(format!(
+                "bars for '{symbol}' must have strictly increasing timestamps (violated at index {index})"
             )));
         }
         Ok(Self {
@@ -51,6 +54,13 @@ impl Ticker {
     }
 }
 
+/// Index of the first bar whose timestamp is not greater than its predecessor's.
+fn first_non_increasing(bars: &[Bar]) -> Option<usize> {
+    bars.windows(2)
+        .position(|pair| pair[1].timestamp <= pair[0].timestamp)
+        .map(|i| i + 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +85,32 @@ mod tests {
     fn rejects_empty_bars() {
         let err = Ticker::new("AAPL", vec![]).unwrap_err();
         assert!(err.to_string().contains("bars"));
+    }
+
+    fn bar_at(timestamp: i64) -> Bar {
+        Bar::new(timestamp, 1.0, 1.0, 1.0, 1.0, 0.0).unwrap()
+    }
+
+    #[test]
+    fn accepts_strictly_increasing_timestamps() {
+        let ticker = Ticker::new("AAPL", vec![bar_at(1), bar_at(2), bar_at(5)]).unwrap();
+        assert_eq!(ticker.len(), 3);
+    }
+
+    #[test]
+    fn rejects_out_of_order_timestamps_with_index() {
+        let err = Ticker::new("AAPL", vec![bar_at(2), bar_at(1)])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("increasing") && err.contains("index 1"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_timestamps() {
+        let err = Ticker::new("AAPL", vec![bar_at(1), bar_at(1)]).unwrap_err();
+        assert!(err.to_string().contains("increasing"));
     }
 }

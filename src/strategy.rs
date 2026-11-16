@@ -4,4 +4,4 @@ pub mod signal;
 pub mod signal_frame;
 
 pub use signal::Signal;
-pub use signal_frame::{SignalFrame, SignalRow};
+pub use signal_frame::{SignalFrame, SymbolSignals};

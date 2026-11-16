@@ -4,8 +4,6 @@
 //! (`strategy.generate_signals(data)`). Everything after that runs in Rust with
 //! the GIL released. Never add per-bar callbacks.
 
-use std::collections::HashSet;
-
 use pyo3::exceptions::PyTypeError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -17,7 +15,8 @@ use crate::bindings::data::{PyBar, PyTicker};
 use crate::bindings::signal::PySignal;
 use crate::data::Ticker;
 use crate::portfolio::Trade;
-use crate::strategy::{SignalFrame, SignalRow};
+use crate::strategy::Signal;
+use crate::strategy::{SignalFrame, SymbolSignals};
 
 // ---------------------------------------------------------------------------
 // Config
@@ -359,8 +358,9 @@ impl PyBacktestResult {
 // ---------------------------------------------------------------------------
 
 /// Runs a backtest. Calls `strategy.generate_signals(data)` exactly once, where
-/// `data` is `{symbol: [Bar, ...]}` for every ticker, and expects a list with one
-/// `{symbol: Signal | None}` dict per timestep.
+/// `data` is `{symbol: [Bar, ...]}` for every ticker, and expects
+/// `{symbol: [Signal | None, ...]}` with one entry per bar of that symbol.
+/// Omitted symbols hold throughout.
 #[pyfunction]
 #[pyo3(signature = (strategy, data, config))]
 pub fn run_backtest(
@@ -370,11 +370,11 @@ pub fn run_backtest(
     config: PyRef<'_, PyBacktestConfig>,
 ) -> PyResult<PyBacktestResult> {
     let tickers: Vec<Ticker> = data.iter().map(|t| t.inner.clone()).collect();
-    let universe = engine::validate_universe(&tickers)?;
+    engine::validate_universe(&tickers)?;
 
     let market_data = build_strategy_input(py, &tickers)?;
     let raw_signals = strategy.call_method1(intern!(py, "generate_signals"), (market_data,))?;
-    let signals = extract_signal_frame(&raw_signals, &universe)?;
+    let signals = extract_signal_frame(&raw_signals, &tickers)?;
 
     let config = config.inner;
     let result = py.detach(move || engine::run(&tickers, &signals, &config))?;
@@ -391,55 +391,53 @@ fn build_strategy_input<'py>(py: Python<'py>, tickers: &[Ticker]) -> PyResult<Bo
     Ok(dict)
 }
 
-/// Converts `list[dict[str, Signal | None]]` into a [`SignalFrame`] with descriptive errors.
-fn extract_signal_frame(
-    raw: &Bound<'_, PyAny>,
-    universe: &HashSet<String>,
-) -> PyResult<SignalFrame> {
-    let list = raw.cast::<PyList>().map_err(|_| {
+/// Converts `dict[str, list[Signal | None]]` into a [`SignalFrame`] with descriptive errors.
+fn extract_signal_frame(raw: &Bound<'_, PyAny>, tickers: &[Ticker]) -> PyResult<SignalFrame> {
+    let dict = raw.cast::<PyDict>().map_err(|_| {
         PyTypeError::new_err(format!(
-            "generate_signals must return a list of dicts, got {}",
+            "generate_signals must return a dict of {{symbol: [Signal | None, ...]}}, got {}",
             type_name(raw)
         ))
     })?;
 
-    let rows = list
-        .iter()
-        .enumerate()
-        .map(|(index, row)| extract_signal_row(index, &row))
-        .collect::<PyResult<Vec<SignalRow>>>()?;
-
-    Ok(SignalFrame::new(rows, universe)?)
-}
-
-fn extract_signal_row(index: usize, row: &Bound<'_, PyAny>) -> PyResult<SignalRow> {
-    let dict = row.cast::<PyDict>().map_err(|_| {
-        PyTypeError::new_err(format!(
-            "signals at index {index} must be a dict of {{symbol: Signal | None}}, got {}",
-            type_name(row)
-        ))
-    })?;
-
-    let mut signals = SignalRow::with_capacity(dict.len());
+    let mut signals = SymbolSignals::with_capacity(dict.len());
     for (key, value) in dict.iter() {
         let symbol: String = key.extract().map_err(|_| {
             PyTypeError::new_err(format!(
-                "signals at index {index} have a non-str key of type {}",
+                "generate_signals returned a non-str symbol key of type {}",
                 type_name(&key)
             ))
         })?;
-        if value.is_none() {
-            continue; // None = hold
-        }
-        let signal = value.extract::<PyRef<'_, PySignal>>().map_err(|_| {
-            PyTypeError::new_err(format!(
-                "signals at index {index} for '{symbol}' must be a Signal or None, got {}",
-                type_name(&value)
-            ))
-        })?;
-        signals.insert(symbol, signal.inner);
+        let entries = extract_symbol_signals(&symbol, &value)?;
+        signals.insert(symbol, entries);
     }
-    Ok(signals)
+    Ok(SignalFrame::new(signals, tickers)?)
+}
+
+fn extract_symbol_signals(symbol: &str, value: &Bound<'_, PyAny>) -> PyResult<Vec<Option<Signal>>> {
+    let list = value.cast::<PyList>().map_err(|_| {
+        PyTypeError::new_err(format!(
+            "signals for '{symbol}' must be a list of Signal | None, got {}",
+            type_name(value)
+        ))
+    })?;
+    list.iter()
+        .enumerate()
+        .map(|(index, item)| extract_signal(symbol, index, &item))
+        .collect()
+}
+
+fn extract_signal(symbol: &str, index: usize, item: &Bound<'_, PyAny>) -> PyResult<Option<Signal>> {
+    if item.is_none() {
+        return Ok(None); // None = hold
+    }
+    let signal = item.extract::<PyRef<'_, PySignal>>().map_err(|_| {
+        PyTypeError::new_err(format!(
+            "signals for '{symbol}' at index {index} must be a Signal or None, got {}",
+            type_name(item)
+        ))
+    })?;
+    Ok(Some(signal.inner))
 }
 
 fn type_name(obj: &Bound<'_, PyAny>) -> String {

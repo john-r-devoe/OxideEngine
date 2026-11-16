@@ -144,4 +144,10 @@ class BacktestResult:
     def config(self) -> BacktestConfig: ...
     def summary(self) -> dict[str, float]: ...
 
-def run_backtest(strategy: Any, data: list[Ticker], config: BacktestConfig) -> BacktestResult: ...
+def run_backtest(strategy: Any, data: list[Ticker], config: BacktestConfig) -> BacktestResult:
+    """Calls ``strategy.generate_signals({symbol: [Bar, ...]})`` exactly once.
+
+    It must return ``{symbol: [Signal | None, ...]}`` with one entry per bar of
+    that symbol (omitted symbols hold). A signal on bar ``i`` fills at the open of
+    the same symbol's bar ``i + 1``.
+    """
