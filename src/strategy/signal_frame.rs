@@ -31,7 +31,8 @@ impl SignalFrame {
             };
             if entries.len() != bars {
                 return Err(OxideError::InvalidInput(format!(
-                    "signals for '{symbol}' have {} entries but the ticker has {bars} bars;                      return exactly one entry (Signal or None) per bar",
+                    "signals for '{symbol}' have {} entries but the ticker has {bars} bars; \
+                     return exactly one entry (Signal or None) per bar",
                     entries.len()
                 )));
             }

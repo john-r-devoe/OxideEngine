@@ -12,7 +12,6 @@ pub use position::Position;
 pub use trade::{Trade, TradeSide};
 
 use crate::error::{OxideError, OxideResult};
-use crate::execution::sizing::MIN_ORDER_QUANTITY;
 use crate::execution::Fill;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,7 +130,9 @@ fn add_to_position(position: Position, fill: &Fill) -> Position {
 }
 
 /// Opposite-direction fill: closes up to the open quantity (emitting a trade)
-/// and opens any excess on the other side at the fill price.
+/// and opens any excess on the other side at the fill price. `closed` is the
+/// smaller of the two sizes, so at most one remainder is non-zero and exact
+/// comparisons never drop quantity.
 fn reduce_position(position: Position, fill: &Fill, step: usize) -> (Trade, Option<Position>) {
     let open_abs = position.quantity.abs();
     let fill_abs = fill.quantity.abs();
@@ -146,13 +147,13 @@ fn reduce_position(position: Position, fill: &Fill, step: usize) -> (Trade, Opti
         entry_commission + exit_commission,
     );
 
-    let remainder = if open_abs - closed >= MIN_ORDER_QUANTITY {
+    let remainder = if open_abs > closed {
         Some(Position {
             quantity: position.quantity.signum() * (open_abs - closed),
             entry_commission: position.entry_commission - entry_commission,
             ..position
         })
-    } else if fill_abs - closed >= MIN_ORDER_QUANTITY {
+    } else if fill_abs > closed {
         let flipped = Fill {
             quantity: fill.quantity.signum() * (fill_abs - closed),
             ..fill.clone()

@@ -4,8 +4,9 @@ use crate::error::{OxideError, OxideResult};
 use crate::execution::Order;
 use crate::strategy::Signal;
 
-/// Quantity changes smaller than this are treated as "no order" (float noise).
-pub const MIN_ORDER_QUANTITY: f64 = 1e-9;
+/// Quantity changes smaller than this fraction of the position size (or of one
+/// unit, whichever is larger) are treated as float noise, not an order.
+pub const ORDER_QUANTITY_TOLERANCE: f64 = 1e-9;
 
 /// Signed units the portfolio should hold after acting on `signal`.
 ///
@@ -62,8 +63,10 @@ pub fn resolve_order(
     price: f64,
     signal_timestamp: i64,
 ) -> OxideResult<Option<Order>> {
-    let delta = target_quantity(signal, current_quantity, equity, price)? - current_quantity;
-    if delta.abs() < MIN_ORDER_QUANTITY {
+    let target = target_quantity(signal, current_quantity, equity, price)?;
+    let delta = target - current_quantity;
+    let scale = current_quantity.abs().max(target.abs()).max(1.0);
+    if delta.abs() < ORDER_QUANTITY_TOLERANCE * scale {
         return Ok(None);
     }
     Ok(Some(Order {
