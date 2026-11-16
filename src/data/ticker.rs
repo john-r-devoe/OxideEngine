@@ -102,7 +102,10 @@ mod tests {
         let err = Ticker::new("AAPL", vec![bar_at(2), bar_at(1)])
             .unwrap_err()
             .to_string();
-        assert!(err.contains("increasing") && err.contains("index 1"), "{err}");
+        assert!(
+            err.contains("increasing") && err.contains("index 1"),
+            "{err}"
+        );
     }
 
     #[test]
