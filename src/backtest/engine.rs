@@ -35,12 +35,17 @@ pub fn validate_universe(tickers: &[Ticker]) -> OxideResult<HashSet<String>> {
     Ok(symbols)
 }
 
-/// Master timeline: sorted union of every ticker's timestamps. Signal row `i`
-/// applies at `timeline[i]`, so `signals.len()` must equal `timeline.len()`.
-pub fn build_timeline(_tickers: &[Ticker]) -> OxideResult<Vec<i64>> {
-    Err(OxideError::NotImplemented(
-        "timeline alignment (backtest::engine::build_timeline)",
-    ))
+/// Master timeline: sorted, deduplicated union of every ticker's timestamps.
+/// Internal to the engine: it orders events across tickers and defines the
+/// equity-curve steps. Strategies never see it (signals are per-ticker).
+pub fn build_timeline(tickers: &[Ticker]) -> Vec<i64> {
+    let mut timeline: Vec<i64> = tickers
+        .iter()
+        .flat_map(|t| t.bars().iter().map(|bar| bar.timestamp))
+        .collect();
+    timeline.sort_unstable();
+    timeline.dedup();
+    timeline
 }
 
 /// Runs the full simulation over pre-computed signals.
@@ -49,7 +54,7 @@ pub fn run(
     _signals: &SignalFrame,
     _config: &BacktestConfig,
 ) -> OxideResult<BacktestResult> {
-    let _timeline = build_timeline(tickers)?;
+    let _timeline = build_timeline(tickers);
     Err(OxideError::NotImplemented(
         "backtest event loop (backtest::engine::run)",
     ))
@@ -88,20 +93,20 @@ mod tests {
 
     #[test]
     fn timeline_of_one_ticker_is_its_timestamps() {
-        let timeline = build_timeline(&[ticker_at("A", &[1, 2, 3])]).unwrap();
+        let timeline = build_timeline(&[ticker_at("A", &[1, 2, 3])]);
         assert_eq!(timeline, vec![1, 2, 3]);
     }
 
     #[test]
     fn timeline_is_sorted_deduplicated_union() {
         let tickers = [ticker_at("A", &[1, 3, 5]), ticker_at("B", &[2, 3, 6])];
-        assert_eq!(build_timeline(&tickers).unwrap(), vec![1, 2, 3, 5, 6]);
+        assert_eq!(build_timeline(&tickers), vec![1, 2, 3, 5, 6]);
     }
 
     #[test]
     fn timeline_of_subset_equals_superset() {
         let tickers = [ticker_at("A", &[1, 2, 3, 4]), ticker_at("B", &[2, 4])];
-        assert_eq!(build_timeline(&tickers).unwrap(), vec![1, 2, 3, 4]);
+        assert_eq!(build_timeline(&tickers), vec![1, 2, 3, 4]);
     }
 
     #[test]
