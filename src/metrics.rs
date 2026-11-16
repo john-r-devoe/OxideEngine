@@ -202,6 +202,7 @@ fn fraction(part: usize, whole: usize) -> f64 {
 mod tests {
     use super::*;
     use crate::portfolio::TradeSide;
+    use std::f64::consts::SQRT_2;
 
     const EPS: f64 = 1e-6;
 
@@ -267,8 +268,8 @@ mod tests {
 
     #[test]
     fn sharpe_uses_per_period_risk_free_rate() {
-        assert!(approx(sharpe_ratio(&[0.1, 0.3], 0.0, 4.0), 2.828_427));
-        assert!(approx(sharpe_ratio(&[0.1, 0.3], 0.4, 4.0), 1.414_214));
+        assert!(approx(sharpe_ratio(&[0.1, 0.3], 0.0, 4.0), 2.0 * SQRT_2));
+        assert!(approx(sharpe_ratio(&[0.1, 0.3], 0.4, 4.0), SQRT_2));
         assert_eq!(sharpe_ratio(&[0.1, 0.1], 0.0, 4.0), 0.0);
     }
 
